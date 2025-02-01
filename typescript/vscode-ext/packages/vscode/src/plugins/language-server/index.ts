@@ -6,7 +6,12 @@ import semver from 'semver'
 import { type ExtensionContext, OutputChannel, Uri, ViewColumn, commands, window, workspace } from 'vscode'
 import * as vscode from 'vscode'
 import type { LanguageClientOptions } from 'vscode-languageclient'
-import { type LanguageClient, type ServerOptions, TransportKind } from 'vscode-languageclient/node'
+import {
+  type LanguageClient,
+  RevealOutputChannelOn,
+  type ServerOptions,
+  TransportKind,
+} from 'vscode-languageclient/node'
 import { z } from 'zod'
 import pythonToBamlCodeLens from '../../LanguageToBamlCodeLensProvider'
 import { WebPanelView } from '../../panels/WebPanelView'
@@ -48,6 +53,7 @@ export const requestDiagnostics = async () => {
 
 export const requestBamlCLIVersion = async () => {
   try {
+    console.log('requesting baml cli version')
     const version = await client?.sendRequest('bamlCliVersion')
     if (!version) {
       return
@@ -128,11 +134,13 @@ const activateClient = (
   clientOptions: LanguageClientOptions,
 ) => {
   getConfig()
+  console.log('Starting language server with options', JSON.stringify(serverOptions, null, 2))
 
   // Create the language client
   client = createLanguageServer(serverOptions, clientOptions)
-
+  console.log('client created')
   client.onReady().then(() => {
+    console.log('client ready')
     client.onNotification('baml/showLanguageServerOutput', () => {
       // need to append line for the show to work for some reason.
       // dont delete this.
@@ -258,6 +266,8 @@ const activateClient = (
         6 * 60 * 60 * 1000 /* 6h in milliseconds: min/hr * secs/min * ms/sec */,
       ),
     )
+  }).catch(err => {
+    console.error('Error activating client', err)
   })
 
   const disposable = client.start()
@@ -308,15 +318,23 @@ const plugin: BamlVSCodePlugin = {
 
     // If the extension is launched in debug mode then the debug server options are used
     // Otherwise the run options are used
+    // const serverOptions: ServerOptions = {
+    //   run: { module: serverModule, transport: TransportKind.ipc },
+    //   debug: {
+    //     module: serverModule,
+    //     transport: TransportKind.ipc,
+    //     options: debugOptions,
+    //   },
+    // }
+
     const serverOptions: ServerOptions = {
-      run: { module: serverModule, transport: TransportKind.ipc },
-      debug: {
-        module: serverModule,
-        transport: TransportKind.ipc,
-        options: debugOptions,
+      command: '/Users/greghale/code/baml/engine/target/debug/baml-cli',
+      args: ['lsp'],
+      options: {
+        cwd: '/Users/greghale/code/baml/engine/target/debug',
+        env: process.env,
       },
     }
-
     // Options to control the language client
     const clientOptions: LanguageClientOptions = {
       // Register the server for baml docs and python
@@ -327,6 +345,10 @@ const plugin: BamlVSCodePlugin = {
           pattern: '**/baml_src/**',
         },
       ],
+      outputChannel: vscode.window.createOutputChannel('Baml Language Server2'),
+      traceOutputChannel: vscode.window.createOutputChannel('Baml Language Server Trace'),
+      revealOutputChannelOn: RevealOutputChannelOn.Never,
+      // initializationOptions // TODO add settings here.
       synchronize: {
         fileEvents: workspace.createFileSystemWatcher('**/baml_src/**/*.{baml,json}'),
       },
@@ -362,7 +384,11 @@ const plugin: BamlVSCodePlugin = {
 
       commands.registerCommand(
         'baml.jumpToDefinition',
-        async (args: { file_path: string; start: number; end: number }) => {
+        async (args: {
+          file_path: string
+          start: number
+          end: number
+        }) => {
           if (!args.file_path) {
             vscode.window.showErrorMessage('File path is missing.')
             return
