@@ -5,6 +5,7 @@ mod attribute;
 mod comment;
 mod config;
 
+pub mod expr;
 mod expression;
 mod field;
 
@@ -269,5 +270,7 @@ fn top_idx_to_top_id(top_idx: usize, top: &Top) -> TopId {
         Top::Generator(_) => TopId::Generator(ValExpId(top_idx as u32)),
         Top::TestCase(_) => TopId::TestCase(ValExpId(top_idx as u32)),
         Top::RetryPolicy(_) => TopId::RetryPolicy(ValExpId(top_idx as u32)),
+        Top::TopLevelAssignment(_) => panic!("TopLevelAssignent doesn't use id's"),
+        Top::ExprFn(_) => panic!("ExprFunction doesn't use id's"),
     }
 }

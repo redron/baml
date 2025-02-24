@@ -1,5 +1,5 @@
 schema = {
-    SOI ~ (expr_fn | caf | value_expression_block | type_expression_block | template_declaration | type_alias | comment_block | raw_string_literal | empty_lines | CATCH_ALL)* ~ EOI
+    SOI ~ (expr_fn | top_level_assignment | value_expression_block | type_expression_block | template_declaration | type_alias | comment_block | raw_string_literal | empty_lines | CATCH_ALL)* ~ EOI
 }
 
 // ######################################
@@ -203,10 +203,32 @@ RETRY_POLICY_KEYWORD = { "retry_policy" }
 // BAML Expressions
 // #################################################
 
-caf = { "let" ~ identifier ~ "=" ~ (expr_fn_body | expr ) ~ ";"}
+// Constant applicative form.
+// e.g. top-level `let x = go(1,2)`
+top_level_assignment = { stmt }
+
+// Regular function.
+// e.g.:
+// fn foo(x:int, y: bool?) -> string {
+//  go(x,y)
+// }
 expr_fn = { "fn" ~ identifier ~ named_argument_list ~ ARROW ~ field_type_chain? ~ expr_fn_body }
+
+// Body of a function (including curly brackets).
 expr_fn_body = { BLOCK_OPEN ~ NEWLINE? ~ (stmt ~ NEWLINE?)* ~ expr ~ NEWLINE? ~ BLOCK_CLOSE }
-expr = { fn_app | expression }
+
+// A compound expression - either function application, abstraction, or one of the already-defined
+// `expression` forms (literal values).
+expr = { fn_app | lambda | expression }
+
+// Statement.
 stmt = { let_expr ~ ";" }
-let_expr = { "let" ~ identifier ~ "=" ~ expr }
+
+// Let-binding statement.
+let_expr = { "let" ~ identifier ~ "=" ~ (expr | expr_fn_body) }
+
+// Function applicatino.
 fn_app = {identifier ~ "(" ~ expr? ~  ("," ~ expr)*  ~ ")" }
+
+// Anaonymous function.
+lambda = { named_argument_list ~ "=>" ~ expr}
