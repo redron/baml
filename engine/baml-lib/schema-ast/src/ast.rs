@@ -26,6 +26,7 @@ pub use assignment::Assignment;
 pub use attribute::{Attribute, AttributeContainer, AttributeId};
 pub use config::ConfigBlockProperty;
 pub use expression::{Expression, RawString};
+pub use expr::{Expr, ExprWithSpan, TopLevelAssignment, ExprFn};
 pub use field::{Field, FieldArity, FieldType};
 pub use identifier::{Identifier, RefIdentifier};
 pub use indentation_type::IndentationType;

@@ -225,7 +225,7 @@ expr = { fn_app | lambda | expression }
 stmt = { let_expr ~ ";" }
 
 // Let-binding statement.
-let_expr = { "let" ~ identifier ~ "=" ~ (expr | expr_fn_body) }
+let_expr = { "let" ~ identifier ~ "=" ~ (expr_fn_body | expr) }
 
 // Function applicatino.
 fn_app = {identifier ~ "(" ~ expr? ~  ("," ~ expr)*  ~ ")" }

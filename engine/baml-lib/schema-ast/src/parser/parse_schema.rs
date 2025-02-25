@@ -439,11 +439,12 @@ mod tests {
         let (ast, _) = parse_schema(&Path::new(path), &source).unwrap();
         match ast.tops.as_slice() {
             [Top::TopLevelAssignment(x)] => {
+                dbg!(&x);
                 assert_eq!(x.stmt.identifier.name(), "x");
                 assert_eq!(x.stmt.body.stmts.len(), 1);
                 assert_eq!(x.stmt.body.stmts[0].identifier.name(), "y");
+                assert!(matches!(x.stmt.body.expr, ExprWithSpan { expr: Expr::FnApp(_,_), .. }));
                 dbg!(&x.stmt.body.expr);
-                panic!("HERE");
             },
             _ => panic!("Expected a single top level assignment."),
         }
