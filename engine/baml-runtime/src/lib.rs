@@ -9,6 +9,7 @@ pub(crate) mod internal;
 pub mod cli;
 pub mod client_registry;
 pub mod test_constraints;
+pub mod eval_expr;
 pub mod errors;
 pub mod request;
 mod runtime;
