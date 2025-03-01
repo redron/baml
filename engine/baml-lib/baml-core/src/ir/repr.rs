@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use anyhow::{anyhow, Result};
 use baml_types::{
     Constraint, ConstraintLevel, FieldType, JinjaExpression, Resolvable, StreamingBehavior,
-    StringOr, UnresolvedValue,
+    StringOr, UnresolvedValue, expr::Expr,
 };
 use either::Either;
 use indexmap::{IndexMap, IndexSet};
@@ -33,6 +33,8 @@ pub struct IntermediateRepr {
     classes: Vec<Node<Class>>,
     type_aliases: Vec<Node<TypeAlias>>,
     functions: Vec<Node<Function>>,
+    expr_fns: Vec<Node<Expr<(),()>>>,
+    toplevel_bindings: Vec<Node<TopLevelBinding>>,
     clients: Vec<Node<Client>>,
     retry_policies: Vec<Node<RetryPolicy>>,
     template_strings: Vec<Node<TemplateString>>,
@@ -47,6 +49,12 @@ pub struct IntermediateRepr {
     structural_recursive_alias_cycles: Vec<IndexMap<String, FieldType>>,
 
     configuration: Configuration,
+}
+
+#[derive(Debug)]
+struct TopLevelBinding {
+    name: Node<String>,
+    expr: Node<Expr<(),()>>,
 }
 
 /// A generic walker. Only walkers instantiated with a concrete ID type (`I`) are useful.
@@ -67,6 +75,8 @@ impl IntermediateRepr {
             finite_recursive_cycles: vec![],
             structural_recursive_alias_cycles: vec![],
             functions: vec![],
+            expr_fns: vec![],
+            toplevel_bindings: vec![],
             clients: vec![],
             retry_policies: vec![],
             template_strings: vec![],
@@ -220,6 +230,14 @@ impl IntermediateRepr {
             },
             functions: db
                 .walk_functions()
+                .map(|e| e.node(db))
+                .collect::<Result<Vec<_>>>()?,
+            expr_fns: db
+                .walk_expr_fns()
+                .map(|e| e.node(db))
+                .collect::<Result<Vec<_>>>()?,
+            toplevel_bindings: db
+                .walk_toplevel_bindings()
                 .map(|e| e.node(db))
                 .collect::<Result<Vec<_>>>()?,
             clients: db
@@ -1009,6 +1027,9 @@ pub struct Function {
     pub configs: Vec<FunctionConfig>,
     pub default_config: String,
 }
+
+
+
 
 #[derive(Debug)]
 pub struct FunctionConfig {

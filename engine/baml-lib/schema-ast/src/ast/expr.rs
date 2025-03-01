@@ -7,7 +7,7 @@ use internal_baml_diagnostics::Diagnostics;
 use crate::ast::{Expression, Identifier};
 use crate::ast::Span;
 
-use super::ArgumentsList;
+use super::{ArgumentsList, BlockArgs, FieldType};
 
 /// A lambda-calculus expression.
 #[derive(Debug, Clone)]
@@ -37,7 +37,8 @@ pub struct Stmt {
 #[derive(Debug, Clone)]
 pub struct ExprFn {
     pub name: Identifier,
-    pub args: ArgumentsList,
+    pub args: BlockArgs,
+    pub return_type: Option<FieldType>,
     pub body: FunctionBody,
     pub span: Span,
 }

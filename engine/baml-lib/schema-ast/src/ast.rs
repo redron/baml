@@ -176,6 +176,12 @@ pub enum TopId {
     TestCase(ValExpId),
 
     RetryPolicy(ValExpId),
+
+    /// A top-level assignment.
+    TopLevelAssignment(ValExpId),
+
+    /// A function declaration.
+    ExprFn(ValExpId),
 }
 
 impl TopId {
@@ -238,8 +244,21 @@ impl TopId {
             _ => None,
         }
     }
-}
 
+    pub fn as_top_level_assignment_id(self) -> Option<ValExpId> {
+        match self {
+            TopId::TopLevelAssignment(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    pub fn as_expr_fn_id(self) -> Option<ValExpId> {
+        match self {
+            TopId::ExprFn(id) => Some(id),
+            _ => None,
+        }
+    }
+}
 impl std::ops::Index<TopId> for SchemaAst {
     type Output = Top;
 
@@ -254,6 +273,8 @@ impl std::ops::Index<TopId> for SchemaAst {
             TopId::Generator(ValExpId(idx)) => idx,
             TopId::TestCase(ValExpId(idx)) => idx,
             TopId::RetryPolicy(ValExpId(idx)) => idx,
+            TopId::TopLevelAssignment(ValExpId(idx)) => idx,
+            TopId::ExprFn(ValExpId(idx)) => idx,
         };
 
         &self.tops[idx as usize]
@@ -271,7 +292,7 @@ fn top_idx_to_top_id(top_idx: usize, top: &Top) -> TopId {
         Top::Generator(_) => TopId::Generator(ValExpId(top_idx as u32)),
         Top::TestCase(_) => TopId::TestCase(ValExpId(top_idx as u32)),
         Top::RetryPolicy(_) => TopId::RetryPolicy(ValExpId(top_idx as u32)),
-        Top::TopLevelAssignment(_) => panic!("TopLevelAssignent doesn't use id's"),
-        Top::ExprFn(_) => panic!("ExprFunction doesn't use id's"),
+        Top::TopLevelAssignment(_) => TopId::TopLevelAssignment(ValExpId(top_idx as u32)),
+        Top::ExprFn(_) => TopId::ExprFn(ValExpId(top_idx as u32)),
     }
 }

@@ -3,9 +3,9 @@ use super::{
     parse_identifier::parse_identifier,
     Rule,
 };
-use crate::ast::expr::{self, Expr, ExprWithSpan, Stmt, TopLevelAssignment};
+use crate::{ast::expr::{self, Expr, ExprWithSpan, Stmt, TopLevelAssignment}, parser::{parse_field::parse_field_type_chain, parse_types::parse_field_type}};
 use crate::ast::ArgumentsList;
-use crate::parser::{parse_expression::parse_expression, parse_identifier};
+use crate::parser::{parse_expression::parse_expression, parse_named_args_list::parse_named_argument_list, parse_identifier};
 use crate::{
     assert_correct_parser,
     ast::{
@@ -22,13 +22,13 @@ pub fn parse_expr_fn(token: Pair<'_>, diagnostics: &mut Diagnostics) -> Option<e
     let span = diagnostics.span(token.as_span());
     let mut tokens = token.into_inner();
     let name = parse_identifier(tokens.next().expect("There is an identifier"), diagnostics);
-    let mut args = ArgumentsList {
-        arguments: Vec::new(),
-    };
-    parse_arguments_list(
+    let args = parse_named_argument_list(
         tokens.next().expect("There is an arguments list"),
-        &mut args,
-        &Some(name.clone()),
+        diagnostics,
+    );
+    let _arrow = tokens.next().expect("There is an arrow");
+    let return_type = parse_field_type_chain(
+        tokens.next().expect("There is a return type"),
         diagnostics,
     );
     let maybe_body = parse_function_body(
@@ -38,6 +38,7 @@ pub fn parse_expr_fn(token: Pair<'_>, diagnostics: &mut Diagnostics) -> Option<e
     maybe_body.map(move |body| ExprFn {
         name,
         args,
+        return_type,
         body,
         span,
     })
@@ -79,6 +80,7 @@ pub fn parse_statement(token: Pair<'_>, diagnostics: &mut Diagnostics) -> Option
             })
         },
         _ => {
+            dbg!(&rhs);
             diagnostics.push_error(DatamodelError::new_static("Parser only allows expr_fn_body and expr here", rhs_span));
             None
         }
@@ -155,9 +157,11 @@ pub fn parse_lambda(token: Pair<'_>, diagnostics: &mut Diagnostics) -> Option<ex
 pub fn parse_function_body(token: Pair<'_>, diagnostics: &mut Diagnostics) -> Option<FunctionBody> {
     assert_correct_parser!(token, Rule::expr_fn_body);
     let span = diagnostics.span(token.as_span());
-    let tokens = token.into_inner();
+    dbg!(&token);
+    let mut tokens = token.into_inner();
     let mut stmts = Vec::new();
     let mut expr = None;
+    let _open_bracket = tokens.next().expect("There is an open bracket");
     for item in tokens {
         match item.as_rule() {
             Rule::stmt => {
@@ -172,6 +176,18 @@ pub fn parse_function_body(token: Pair<'_>, diagnostics: &mut Diagnostics) -> Op
                     expr = Some(parsed_expr);
                     break;
                 }
+            }
+            Rule::BLOCK_CLOSE => {
+                if expr.is_none() {
+                    diagnostics.push_error(DatamodelError::new_static(
+                        "Function must end in an expression.",
+                        span.clone()
+                    ));
+                }
+                break;
+            }
+            Rule::NEWLINE => {
+                continue;
             }
             _ => {
                 diagnostics.push_error(DatamodelError::new_static(
