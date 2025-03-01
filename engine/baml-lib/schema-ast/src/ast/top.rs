@@ -84,8 +84,21 @@ impl Top {
             _ => None,
         }
     }
-}
 
+    pub fn as_top_level_assignment(&self) -> Option<&TopLevelAssignment> {
+        match self {
+            Top::TopLevelAssignment(assignment) => Some(assignment),
+            _ => None,
+        }
+    }
+
+    pub fn as_expr_fn(&self) -> Option<&ExprFn> {
+        match self {
+            Top::ExprFn(expr_fn) => Some(expr_fn),
+            _ => None,
+        }
+    }
+}
 impl WithIdentifier for Top {
     /// The name of the item.
     fn identifier(&self) -> &Identifier {

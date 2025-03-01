@@ -120,6 +120,34 @@ impl std::ops::Index<TypeAliasId> for SchemaAst {
     }
 }
 
+/// An opaque identifier for a top-level assignment in a schema AST.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TopLevelAssignmentId(u32);
+
+impl std::ops::Index<TopLevelAssignmentId> for SchemaAst {
+    type Output = TopLevelAssignment;
+
+    fn index(&self, index: TopLevelAssignmentId) -> &Self::Output {
+        self.tops[index.0 as usize]
+            .as_top_level_assignment()
+            .expect("expected top level assignment")
+    }
+}
+
+/// An opaque identifier for an expression function in a schema AST.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ExprFnId(u32);
+
+impl std::ops::Index<ExprFnId> for SchemaAst {
+    type Output = ExprFn;
+
+    fn index(&self, index: ExprFnId) -> &Self::Output {
+        self.tops[index.0 as usize]
+            .as_expr_fn()
+            .expect("expected expression function")
+    }
+}
+
 /// An opaque identifier for a model in a schema AST. Use the
 /// `schema[model_id]` syntax to resolve the id to an `ast::Model`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -178,10 +206,10 @@ pub enum TopId {
     RetryPolicy(ValExpId),
 
     /// A top-level assignment.
-    TopLevelAssignment(ValExpId),
+    TopLevelAssignment(TopLevelAssignmentId),
 
     /// A function declaration.
-    ExprFn(ValExpId),
+    ExprFn(ExprFnId),
 }
 
 impl TopId {
@@ -231,6 +259,20 @@ impl TopId {
         }
     }
 
+    pub fn as_toplevel_assignment_id(self) -> Option<TopLevelAssignmentId> {
+        match self {
+            TopId::TopLevelAssignment(id) => Some(id),
+            _ => None,
+        }
+    }
+
+    pub fn as_expr_fn_id(self) -> Option<ExprFnId> {
+        match self {
+            TopId::ExprFn(id) => Some(id),
+            _ => None,
+        }
+    }
+
     pub fn as_retry_policy_id(self) -> Option<ValExpId> {
         match self {
             TopId::RetryPolicy(id) => Some(id),
@@ -245,19 +287,13 @@ impl TopId {
         }
     }
 
-    pub fn as_top_level_assignment_id(self) -> Option<ValExpId> {
+    pub fn as_top_level_assignment_id(self) -> Option<TopLevelAssignmentId> {
         match self {
             TopId::TopLevelAssignment(id) => Some(id),
             _ => None,
         }
     }
 
-    pub fn as_expr_fn_id(self) -> Option<ValExpId> {
-        match self {
-            TopId::ExprFn(id) => Some(id),
-            _ => None,
-        }
-    }
 }
 impl std::ops::Index<TopId> for SchemaAst {
     type Output = Top;
@@ -273,8 +309,8 @@ impl std::ops::Index<TopId> for SchemaAst {
             TopId::Generator(ValExpId(idx)) => idx,
             TopId::TestCase(ValExpId(idx)) => idx,
             TopId::RetryPolicy(ValExpId(idx)) => idx,
-            TopId::TopLevelAssignment(ValExpId(idx)) => idx,
-            TopId::ExprFn(ValExpId(idx)) => idx,
+            TopId::TopLevelAssignment(TopLevelAssignmentId(idx)) => idx,
+            TopId::ExprFn(ExprFnId(idx)) => idx,
         };
 
         &self.tops[idx as usize]
@@ -292,7 +328,7 @@ fn top_idx_to_top_id(top_idx: usize, top: &Top) -> TopId {
         Top::Generator(_) => TopId::Generator(ValExpId(top_idx as u32)),
         Top::TestCase(_) => TopId::TestCase(ValExpId(top_idx as u32)),
         Top::RetryPolicy(_) => TopId::RetryPolicy(ValExpId(top_idx as u32)),
-        Top::TopLevelAssignment(_) => TopId::TopLevelAssignment(ValExpId(top_idx as u32)),
-        Top::ExprFn(_) => TopId::ExprFn(ValExpId(top_idx as u32)),
+        Top::TopLevelAssignment(_) => TopId::TopLevelAssignment(TopLevelAssignmentId(top_idx as u32)),
+        Top::ExprFn(_) => TopId::ExprFn(ExprFnId(top_idx as u32)),
     }
 }

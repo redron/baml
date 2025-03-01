@@ -34,7 +34,7 @@ pub struct IntermediateRepr {
     type_aliases: Vec<Node<TypeAlias>>,
     functions: Vec<Node<Function>>,
     expr_fns: Vec<Node<Expr<(),()>>>,
-    toplevel_bindings: Vec<Node<TopLevelBinding>>,
+    toplevel_assignments: Vec<Node<TopLevelAssignment>>,
     clients: Vec<Node<Client>>,
     retry_policies: Vec<Node<RetryPolicy>>,
     template_strings: Vec<Node<TemplateString>>,
@@ -52,7 +52,7 @@ pub struct IntermediateRepr {
 }
 
 #[derive(Debug)]
-struct TopLevelBinding {
+struct TopLevelAssignment {
     name: Node<String>,
     expr: Node<Expr<(),()>>,
 }
@@ -76,7 +76,7 @@ impl IntermediateRepr {
             structural_recursive_alias_cycles: vec![],
             functions: vec![],
             expr_fns: vec![],
-            toplevel_bindings: vec![],
+            toplevel_assignments: vec![],
             clients: vec![],
             retry_policies: vec![],
             template_strings: vec![],
@@ -153,6 +153,14 @@ impl IntermediateRepr {
 
     pub fn walk_functions(&self) -> impl ExactSizeIterator<Item = Walker<'_, &Node<Function>>> {
         self.functions.iter().map(|e| Walker { db: self, item: e })
+    }
+
+    pub fn walk_toplevel_assignments(&self) -> impl ExactSizeIterator<Item = Walker<'_, &Node<TopLevelAssignment>>> {
+        self.toplevel_assignments.iter().map(|e| Walker { db: self, item: e })
+    }
+
+    pub fn walk_expr_fns(&self) -> impl ExactSizeIterator<Item = Walker<'_, &Node<Expr<(),()>>>> {
+        self.expr_fns.iter().map(|e| Walker { db: self, item: e })
     }
 
     pub fn walk_tests(
@@ -236,8 +244,8 @@ impl IntermediateRepr {
                 .walk_expr_fns()
                 .map(|e| e.node(db))
                 .collect::<Result<Vec<_>>>()?,
-            toplevel_bindings: db
-                .walk_toplevel_bindings()
+            toplevel_assignments: db
+                .walk_toplevel_assignments()
                 .map(|e| e.node(db))
                 .collect::<Result<Vec<_>>>()?,
             clients: db

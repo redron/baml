@@ -29,6 +29,7 @@ impl <T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug> Expr<T,U> {
             Expr::Lambda(_, _, meta) => meta,
             Expr::App(_, _, meta) => meta,
             Expr::ArgsTuple(_, meta) => meta,
+            Expr::Let(_, _, _, meta) => meta,
         }
     }
 
@@ -40,6 +41,7 @@ impl <T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug> Expr<T,U> {
             Expr::Lambda(_, _, meta) => meta,
             Expr::App(_, _, meta) => meta,
             Expr::ArgsTuple(_, meta) => meta,
+            Expr::Let(_, _, _, meta) => meta,
         }
     }
 }

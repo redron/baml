@@ -11,6 +11,7 @@ mod r#class;
 mod client;
 mod configuration;
 mod r#enum;
+mod expr_fn;
 mod field;
 mod function;
 mod template_string;
@@ -23,10 +24,11 @@ use either::Either;
 pub use field::*;
 pub use function::FunctionWalker;
 use internal_baml_schema_ast::ast::{
-    FieldType, Identifier, TopId, TypeAliasId, TypeExpId, WithName,
+    FieldType, Identifier, SchemaAst, TopId, TypeAliasId, TypeExpId, WithName
 };
 pub use r#class::*;
 pub use r#enum::*;
+pub use expr_fn::{ExprFnWalker, TopLevelAssignmentWalker};
 pub use template_string::TemplateStringWalker;
 
 /// A generic walker. Only walkers intantiated with a concrete ID type (`I`) are useful.
@@ -38,11 +40,17 @@ pub struct Walker<'db, I> {
     pub id: I,
 }
 
-impl<'db, I> Walker<'db, I> {
+impl<'db, I> Walker<'db, I>
+{
     /// Traverse something else in the same schema.
     pub fn walk<J>(self, other: J) -> Walker<'db, J> {
         self.db.walk(other)
     }
+
+    // pub fn ast_node(self) -> &'db I
+    // {
+    //     &self.db.ast[self.id]
+    // }
 }
 
 impl<'db, I> PartialEq for Walker<'db, I>
@@ -242,6 +250,22 @@ impl<'db> crate::ParserDatabase {
                 db: self,
                 id: top_id,
             })
+    }
+
+    /// Walk all toplevel assignments in the schema.
+    pub fn walk_toplevel_assignments(&self) -> impl Iterator<Item = TopLevelAssignmentWalker<'_>> {
+        self.ast()
+            .iter_tops()
+            .filter_map(|(top_id, _)| top_id.as_toplevel_assignment_id())
+            .map(move |top_id| Walker { db: self, id: top_id })
+    }
+
+    /// Walk all expr functions in the schema.
+    pub fn walk_expr_fns(&self) -> impl Iterator<Item = ExprFnWalker<'_>> {
+        self.ast()
+            .iter_tops()
+            .filter_map(|(top_id, _)| top_id.as_expr_fn_id())
+            .map(move |top_id| Walker { db: self, id: top_id })
     }
 
     /// Walk all functions in the schema.
