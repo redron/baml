@@ -67,8 +67,29 @@ impl <T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug> Expr<T,U> {
                 };
                 format!("{}({})", func.dump_str(), args_str)
             },
-            Expr::Let(name, expr, body, _) => format!("Let {} = {} in\n{}", name, expr.dump_str(), body.dump_str()),
+            Expr::Let(name, expr, body, _) => format!("Let {} = {} in {}", name, expr.dump_str(), body.dump_str()),
             Expr::ArgsTuple(args, _) => format!("ArgsTuple({:?})", args.iter().map(|arg| arg.dump_str()).collect::<Vec<_>>()),
+        }
+    }
+
+    pub fn temporary_same_state(&self, other: &Expr<T,U>) -> bool {
+        match (self, other) {
+            (Expr::Atom(a1, _), Expr::Atom(a2, _)) => a1.clone().value() == a2.clone().value(),
+            (Expr::LLMFunction(n1, _, _), Expr::LLMFunction(n2, _, _)) => n1 == n2,
+            (Expr::Var(n1, _), Expr::Var(n2, _)) => n1 == n2,
+            (Expr::Lambda(args1, body1, _), Expr::Lambda(args2, body2, _)) => {
+                args1 == args2 && body1.temporary_same_state(body2)
+            }
+            (Expr::App(f1, x1, _), Expr::App(f2, x2, _)) => {
+                f1.temporary_same_state(f2) && x1.temporary_same_state(x2)
+            }
+            (Expr::Let(n1, e1, b1, _), Expr::Let(n2, e2, b2, _)) => {
+                n1 == n2 && e1.temporary_same_state(e2) && b1.temporary_same_state(b2)
+            }
+            (Expr::ArgsTuple(args1, _), Expr::ArgsTuple(args2, _)) => {
+                args1.iter().zip(args2.iter()).all(|(a1, a2)| a1.temporary_same_state(a2))
+            }
+            _ => false,
         }
     }
 }

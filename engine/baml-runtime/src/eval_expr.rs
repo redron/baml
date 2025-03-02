@@ -16,11 +16,12 @@ impl <'a, T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug + Default> Eval
     }
 }
 
+/// Perform a single execution step. It only performs beta reduction.
 pub async fn step<'a, T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug + Default>(
     env: &EvalEnv<'a, T, U>,
     expr: &Expr<T, U>,
 ) -> anyhow::Result<Expr<T, U>> {
-    eprintln!("--------\nSTEP:\n{:?}\n\nCONTEXT\n {}\n\n", expr, env.dump_ctx());
+    eprintln!("--------\nSTEP:\n{}\n\nCONTEXT\n {}\n\n", expr.dump_str(), env.dump_ctx());
     Box::pin(async move {
         match expr {
             Expr::Var(var_name, _) => {
@@ -31,21 +32,26 @@ pub async fn step<'a, T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug + D
                 Ok(val.clone())
             },
             Expr::Let(name, val, body, meta) => {
-                let new_body = subst(env, body)?;
-                let new_body = eval_to_value(env, &new_body).await?.expect("Couldn't go all the way");
-                let new_body = Expr::Atom(new_body, meta.clone());
+
                 let mut new_context = env.context.clone();
                 new_context.insert(name.clone(), (val.as_ref()).clone());
+
                 let new_env = EvalEnv {
                     context: new_context,
                     runtime: env.runtime,
                 };
+
+                let new_body = subst(&new_env, body).await?;
+                let new_body = eval_to_value(&new_env, &new_body).await?.expect("Couldn't go all the way");
+                let new_body = Expr::Atom(new_body, meta.clone());
+
+                // Ok(new_body)
                 step(&new_env, &new_body).await
                 // step(env, new_body).await?.clone()
             },
             Expr::Atom(_, _) => Ok(expr.clone()),
             Expr::Lambda(_, _, _) => Ok(expr.clone()),
-            Expr::App(f, x, meta) => step_app(env, f, x, meta).await,
+            Expr::App(f, x, meta) => step_app(env, &subst(env, f).await?, x, meta).await,
             Expr::LLMFunction(fn_name, _, _) => {
                 Err(anyhow::anyhow!("Reached bare LLM function: {:?}", fn_name))
             }
@@ -70,7 +76,7 @@ async fn step_app<'a,  T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug + 
     x: &Expr<T, U>,
     meta: &T,
 ) -> anyhow::Result<Expr<T, U>> {
-    eprintln!("STEP_APP:\nf:{:?}\nx:{:?}\nCTX:{}\n", f, x, env.dump_ctx());
+    eprintln!("STEP_APP:\nf:{}\nx:{}\nCTX:{}\n", f.dump_str(), x.dump_str(), env.dump_ctx());
     match (f, x) {
         (Expr::Lambda(params, body, _), Expr::ArgsTuple(args, _)) => {
             // Apply a lambda to its argument.
@@ -90,7 +96,7 @@ async fn step_app<'a,  T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug + 
                 context: new_ctx,
                 runtime: env.runtime,
             };
-            subst(&new_env, body)
+            subst(&new_env, body).await
         }
         (Expr::LLMFunction(fn_name, arg_names, _), Expr::ArgsTuple(args, _)) => {
             let args: Vec<BamlValue> = args.clone().into_iter().map(|arg| arg.as_atom().unwrap().clone().value()).collect();
@@ -116,16 +122,22 @@ async fn step_app<'a,  T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug + 
                 .map_meta(|_| U::default());
             Ok(Expr::Atom(val, meta.clone()))
         }
+        (Expr::Lambda(_,_,_), _) => {
+            let new_f = subst(env, f).await?;
+            Box::pin(step_app(env, &new_f, x, meta)).await
+        }
         _ => Err(anyhow::anyhow!("Not a function: {:?}", f)),
     }
 }
 
-/// Replace variables in an expression with their expressions.
+/// Replace variables in an expression with their expressions
+/// from the environment context.
 /// This implementation completely ignores captures. TODO: fix.
-fn subst<'a, T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug + Default>(
+async fn subst<'a, T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug + Default>(
     env: &EvalEnv<'a, T, U>,
     expr: &Expr<T, U>,
 ) -> anyhow::Result<Expr<T, U>> {
+    eprintln!("SUBST:\n{}\nCTX:{}\n", expr.dump_str(), env.dump_ctx());
     match expr {
         Expr::Var(var_name, _) => {
             let val = env.context
@@ -134,25 +146,39 @@ fn subst<'a, T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug + Default>(
             Ok(val.clone())
         }
         Expr::Atom(_, _) => Ok(expr.clone()),
-        Expr::Lambda(_, body, _) => subst(env, body),
+        Expr::Lambda(_, body, _) => {
+            // Box::pin the recursive call
+            Box::pin(subst(env, body)).await
+        },
         Expr::App(f, x, meta) => {
-            let f = subst(env, f)?;
-            let x = subst(env, x)?;
+            // Box::pin both recursive calls
+            let f = Box::pin(subst(env, f)).await?;
+            let x = Box::pin(subst(env, x)).await?;
             Ok(Expr::App(Arc::new(f), Arc::new(x), meta.clone()))
         }
         Expr::ArgsTuple(args, meta) => {
-            let args = args
-                .iter()
-                .map(|arg| subst(env, arg))
-                .collect::<anyhow::Result<Vec<_>>>()?;
-            Ok(Expr::ArgsTuple(args, meta.clone()))
+            let mut new_args = Vec::new();
+            for arg in args {
+                // Box::pin the recursive call in the loop
+                new_args.push(Box::pin(subst(env, arg)).await?);
+            }
+            Ok(Expr::ArgsTuple(new_args, meta.clone()))
         }
         Expr::LLMFunction(_, _, _) => Ok(expr.clone()),
         Expr::Let(name, value, body, meta) => {
-            let new_body = subst(env, body)?;
+            let mut new_ctx = env.context.clone();
+            // Box::pin the eval_to_value call
+            let new_value = Box::pin(subst(env, value)).await?;
+            new_ctx.insert(name.clone(), new_value.clone());
+            let new_env = EvalEnv {
+                context: new_ctx,
+                runtime: env.runtime,
+            };
+            // Box::pin the recursive subst call
+            let new_body = Box::pin(subst(&new_env, body)).await?;
             Ok(Expr::Let(
                 name.clone(),
-                value.clone(),
+                Arc::new(new_value),
                 Arc::new(new_body),
                 meta.clone(),
             ))
@@ -166,14 +192,23 @@ pub async fn eval_to_value<'a, T: Clone + std::fmt::Debug, U: Clone + std::fmt::
     expr: &Expr<T, U>,
 ) -> anyhow::Result<Option<BamlValueWithMeta<U>>> {
     eprintln!("called to_value: {:?}", expr);
-    match expr {
-        Expr::Atom(value, _) => Ok(Some(value.clone())),
-        other => {
-            let new_expr = step(env, other).await?;
-            // Box::pin the recursive call to avoid stack overflow
-            Box::pin(eval_to_value(env, &new_expr)).await
+    let max_steps = 1000;
+    let mut current_expr = expr.clone();
+
+    for steps in 0..max_steps {
+        match current_expr {
+            Expr::Atom(value, _) => return Ok(Some(value.clone())),
+            other => {
+                let new_expr = step(env, &other).await?;
+
+                if new_expr.temporary_same_state(expr) {
+                    return Err(anyhow::anyhow!("Failed to make progress."));
+                }
+                current_expr = new_expr;
+            }
         }
     }
+    Err(anyhow::anyhow!("Max steps reached."))
 }
 
 /// Create a context from the expr_functions, top_level_assignments, and
