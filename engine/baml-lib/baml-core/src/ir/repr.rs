@@ -1,16 +1,14 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
 use anyhow::{anyhow, Result};
 use baml_types::{
-    Constraint, ConstraintLevel, FieldType, JinjaExpression, Resolvable, StreamingBehavior,
-    StringOr, UnresolvedValue, expr::Expr,
+    expr::{Expr, Name}, BamlValueWithMeta, Constraint, ConstraintLevel, FieldType, JinjaExpression, Resolvable, StreamingBehavior, StringOr, UnresolvedValue
 };
 use either::Either;
 use indexmap::{IndexMap, IndexSet};
 use internal_baml_parser_database::{
     walkers::{
-        ClassWalker, ClientWalker, ConfigurationWalker, EnumValueWalker, EnumWalker, FieldWalker,
-        FunctionWalker, TemplateStringWalker, TypeAliasWalker, Walker as AstWalker,
+        ClassWalker, ClientWalker, ConfigurationWalker, EnumValueWalker, EnumWalker, ExprFnWalker, FieldWalker, FunctionWalker, TemplateStringWalker, TopLevelAssignmentWalker, TypeAliasWalker, Walker as AstWalker
     },
     Attributes, ParserDatabase, PromptAst, RetryPolicyStrategy, TypeWalker,
 };
@@ -32,9 +30,9 @@ pub struct IntermediateRepr {
     enums: Vec<Node<Enum>>,
     classes: Vec<Node<Class>>,
     type_aliases: Vec<Node<TypeAlias>>,
-    functions: Vec<Node<Function>>,
-    expr_fns: Vec<Node<Expr<(),()>>>,
-    toplevel_assignments: Vec<Node<TopLevelAssignment>>,
+    pub functions: Vec<Node<Function>>,
+    pub expr_fns: Vec<Node<(Name, Expr<(),()>)>>,
+    pub toplevel_assignments: Vec<Node<TopLevelAssignment>>,
     clients: Vec<Node<Client>>,
     retry_policies: Vec<Node<RetryPolicy>>,
     template_strings: Vec<Node<TemplateString>>,
@@ -52,9 +50,96 @@ pub struct IntermediateRepr {
 }
 
 #[derive(Debug)]
-struct TopLevelAssignment {
-    name: Node<String>,
-    expr: Node<Expr<(),()>>,
+pub struct TopLevelAssignment {
+    pub name: Node<String>,
+    pub expr: Node<Expr<(),()>>,
+}
+
+impl WithRepr<TopLevelAssignment> for TopLevelAssignmentWalker<'_> {
+    fn attributes(&self, _: &ParserDatabase) -> NodeAttributes {
+        // TODO: Add attributes.
+        NodeAttributes::default()
+    }
+
+    fn repr(&self, db: &ParserDatabase) -> Result<TopLevelAssignment> {
+        // This is a placeholder implementation
+        let name = self.top_level_assignment().stmt.identifier.name().to_string();
+        let final_expr = self.top_level_assignment().stmt.body.expr.repr(db)?;
+        let expr = self.top_level_assignment().stmt.body.stmts.iter().fold(final_expr, |acc, stmt| {
+            let stmt_expr = stmt.body.expr.repr(db).expect("TODO: Implement this");
+            Expr::Let(stmt.identifier.name().to_string(), Arc::new(stmt_expr), Arc::new(acc), ())
+        });
+        Ok(TopLevelAssignment {
+            name: Node {
+                elem: name,
+                attributes: NodeAttributes::default(),
+            },
+            expr: Node {
+                elem: expr,
+                attributes: NodeAttributes::default(),
+            },
+        })
+    }
+}
+
+
+impl WithRepr<Expr<(),()>> for ast::ExprWithSpan {
+    fn repr(&self, db: &ParserDatabase) -> Result<Expr<(),()>> {
+        match &self.expr {
+            ast::Expr::Atom(expr) => Ok(expr.repr(db)?),
+            ast::Expr::Lambda(args, body) => {
+                let args = args.arguments.iter().filter_map(|arg| arg.value.as_string_value().map(|v| v.0.to_string())).collect();
+                let body = convert_function_body(*body.to_owned(), db)?;
+                Ok(Expr::Lambda(args, Arc::new(body), ()))
+            }
+            ast::Expr::FnApp(func, args) => {
+                let func = Expr::Var(func.name().to_string(), ());
+                let args = args
+                    .iter()
+                    .map(|arg| arg.repr(db).expect("TODO: Handle errors"))
+                    .collect();
+                Ok(Expr::App(Arc::new(func), Arc::new(Expr::ArgsTuple(args, ())), ()))
+            }
+        }
+    }
+}
+
+impl WithRepr<(Name, Expr<(),()>)> for ExprFnWalker<'_> {
+    fn repr(&self, db: &ParserDatabase) -> Result<(Name, Expr<(),()>)> {
+        let body = convert_function_body(self.expr_fn().body.to_owned(), db)?;
+        let args = self.expr_fn().args.args.iter().map(|(arg_name, _arg_type)| arg_name.to_string()).collect();
+        Ok((self.expr_fn().name.to_string(), Expr::Lambda(args, Arc::new(body), ())))
+    }
+}
+
+fn convert_function_body(function_body: ast::expr::FunctionBody, db: &ParserDatabase) -> Result<Expr<(),()>> {
+        let final_expr= function_body.expr.repr(db)?;
+        let expr = function_body.stmts.iter().fold(final_expr, |acc, stmt| {
+            let stmt_expr = stmt.body.expr.repr(db).expect("TODO: Handle errors");
+            Expr::Let(stmt.identifier.name().to_string(), Arc::new(stmt_expr), Arc::new(acc), ())
+        });
+        Ok(expr)
+}
+
+// TODO: This is a temporary implementation.
+impl WithRepr<Expr<(),()>> for ast::Expression {
+    fn repr(&self, db: &ParserDatabase) -> Result<Expr<(),()>> {
+        match self {
+            ast::Expression::BoolValue(val, _) => Ok(Expr::Atom(BamlValueWithMeta::Bool(*val,()), ())),
+            ast::Expression::NumericValue(val, _) => {
+                val.parse::<i64>().map(|v| Expr::Atom(BamlValueWithMeta::Int(v,()), ()))
+                .or_else(|_| val.parse::<f64>()
+                .map(|v| Expr::Atom(BamlValueWithMeta::Float(v,()), ()))
+                .or_else(|_| Err(anyhow!("Invalid numeric value: {}", val))))
+            },
+            ast::Expression::StringValue(val, _) => Ok(Expr::Atom(BamlValueWithMeta::String(val.to_string(),()), ())),
+            ast::Expression::RawStringValue(val) => Ok(Expr::Atom(BamlValueWithMeta::String(val.value().to_string(),()), ())),
+            ast::Expression::JinjaExpressionValue(val, _) => todo!(), // Ok(BamlValueWithMeta::JinjaExpressionValue(val.repr(db)?,())),
+            ast::Expression::Array(vals, _) => Ok(Expr::Atom(BamlValueWithMeta::List(vals.iter().map(|v| v.repr(db).unwrap().as_atom().unwrap().clone()).collect(),()), ())),
+            ast::Expression::Map(vals, _) => todo!(), // Ok(BamlValueWithMeta::Map(vals.iter().map(|(k, v)| (k.repr(db)?, v.repr(db)?)).collect(),())),
+            ast::Expression::Identifier(id) => Ok(Expr::Var(id.name().to_string(), ())),
+        }
+    }
 }
 
 /// A generic walker. Only walkers instantiated with a concrete ID type (`I`) are useful.
@@ -159,7 +244,7 @@ impl IntermediateRepr {
         self.toplevel_assignments.iter().map(|e| Walker { db: self, item: e })
     }
 
-    pub fn walk_expr_fns(&self) -> impl ExactSizeIterator<Item = Walker<'_, &Node<Expr<(),()>>>> {
+    pub fn walk_expr_fns(&self) -> impl ExactSizeIterator<Item = Walker<'_, &Node<(Name, Expr<(),()>)>>> {
         self.expr_fns.iter().map(|e| Walker { db: self, item: e })
     }
 

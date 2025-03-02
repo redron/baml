@@ -1,9 +1,46 @@
 use internal_baml_schema_ast::ast;
+use baml_types::expr::{Expr};
+use internal_baml_schema_ast::ast::{TopLevelAssignment, ExprFn, WithName};
 
 use super::Walker;
 
 /// Walker for top level assignments.
 pub type TopLevelAssignmentWalker<'db> = Walker<'db, ast::TopLevelAssignmentId>;
 
+
+impl <'db> TopLevelAssignmentWalker<'db> {
+    /// Returns the name of the top level assignment.
+    pub fn name(&self) -> &str {
+        self.db.ast[self.id].stmt.identifier.name()
+    }
+
+    /// Return the AST node for the top level assignment.
+    pub fn top_level_assignment(&self) -> &ast::TopLevelAssignment {
+        &self.db.ast[self.id]
+    }
+
+    /// Returns the expression of the top level assignment.
+    pub fn expr(&self) -> &ast::ExprWithSpan {
+        &self.db.ast[self.id].stmt.body.expr
+    }
+}
+
 /// Walker for expression functions.
 pub type ExprFnWalker<'db> = Walker<'db, ast::ExprFnId>;
+
+impl <'db> ExprFnWalker<'db> {
+    /// Return the name of the function.
+    pub fn name(&self) -> &str {
+        self.db.ast[self.id].name.name()
+    }
+
+    /// Return the AST node for the function.
+    pub fn expr_fn(&self) -> &ast::ExprFn {
+        &self.db.ast[self.id]
+    }
+
+    /// Return the arguments of the function.
+    pub fn args(&self) -> &ast::BlockArgs {
+        &self.db.ast[self.id].args
+    }
+}

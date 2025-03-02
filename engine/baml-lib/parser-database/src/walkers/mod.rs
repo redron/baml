@@ -46,11 +46,6 @@ impl<'db, I> Walker<'db, I>
     pub fn walk<J>(self, other: J) -> Walker<'db, J> {
         self.db.walk(other)
     }
-
-    // pub fn ast_node(self) -> &'db I
-    // {
-    //     &self.db.ast[self.id]
-    // }
 }
 
 impl<'db, I> PartialEq for Walker<'db, I>

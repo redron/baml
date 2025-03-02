@@ -25,16 +25,22 @@ use std::sync::Arc;
 use anyhow::Context;
 use anyhow::Result;
 
+use baml_types::expr::Expr;
 use baml_types::BamlMap;
 use baml_types::BamlValue;
+use baml_types::BamlValueWithMeta;
+use baml_types::Completion;
 use baml_types::Constraint;
 use cfg_if::cfg_if;
 use client_registry::ClientRegistry;
+use eval_expr::EvalEnv;
 use indexmap::IndexMap;
+use internal::llm_client::orchestrator::OrchestrationScope;
 use internal_baml_core::configuration::CloudProject;
 use internal_baml_core::configuration::CodegenGenerator;
 use internal_baml_core::configuration::Generator;
 use internal_baml_core::configuration::GeneratorOutputType;
+use jsonish::ResponseBamlValue;
 use on_log_event::LogEventCallbackSync;
 use runtime::InternalBamlRuntime;
 use std::sync::OnceLock;
@@ -326,9 +332,24 @@ impl BamlRuntime {
         let span = self.tracer.start_span(&function_name, ctx, params);
         let response = match ctx.create_ctx(tb, cb) {
             Ok(rctx) => {
-                self.inner
-                    .call_function_impl(function_name, params, rctx)
-                    .await
+                if self.function_names().find(|f| f == &function_name).is_some() {
+                    self.inner
+                        .call_function_impl(function_name, params, rctx)
+                        .await
+                } else {
+                    let fn_expr = self.inner.ir().expr_fns.iter().find(|f| f.elem.0 == function_name).unwrap().elem.1.clone();
+                    let context = eval_expr::initial_context(&self.inner.ir());
+                    let env = EvalEnv { context, runtime: self };
+                    let params_expr = Expr::ArgsTuple(params.iter().map(|(k, v)| Expr::Atom(BamlValueWithMeta::with_default_meta(v), ())).collect(), ());
+                    let fn_call_expr = Expr::App(Arc::new(fn_expr), Arc::new(params_expr), ());
+                    let res = eval_expr::eval_to_value(&env, &fn_call_expr).await.unwrap().unwrap();
+                    let res2 = ResponseBamlValue( res.map_meta(|_| (vec![], vec![], Completion::default())));
+                    Ok(FunctionResult::new(
+                        OrchestrationScope{ scope: vec![]},
+                        LLMResponse::InternalFailure("No LLM function".to_string()),
+                        Some(Ok(res2))
+                    ))
+                }
             }
             Err(e) => Err(e),
         };
