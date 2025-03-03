@@ -15,6 +15,7 @@ use baml_types::BamlValueWithMeta;
 use baml_types::ResponseCheck;
 use baml_types::{BamlMediaType, BamlValue, GeneratorOutputType, TypeValue};
 use indexmap::IndexMap;
+use internal_baml_core::ir::repr::Walker;
 use internal_baml_codegen::version_check::GeneratorType;
 use internal_baml_codegen::version_check::{check_version, VersionCheckMode};
 use internal_llm_client::AllowedRoleMetadata;
@@ -943,6 +944,7 @@ impl WasmRuntime {
             .internal()
             .ir()
             .walk_functions()
+            .chain(self.runtime.internal().ir().expr_fns_as_functions().iter().map(|f| Walker { db: &self.runtime.internal().ir(), item: f }))
             .map(|f| {
                 let snippet = format!(
                     r#"test TestName {{

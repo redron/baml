@@ -38,6 +38,8 @@ use indexmap::IndexMap;
 use internal::llm_client::orchestrator::OrchestrationScope;
 use internal_baml_core::configuration::CloudProject;
 use internal_baml_core::configuration::CodegenGenerator;
+use crate::internal::llm_client::LLMCompleteResponse;
+use web_time::SystemTime;
 use internal_baml_core::configuration::Generator;
 use internal_baml_core::configuration::GeneratorOutputType;
 use jsonish::ResponseBamlValue;
@@ -51,7 +53,9 @@ pub use runtime_context::BamlSrcReader;
 use runtime_interface::ExperimentalTracingInterface;
 use runtime_interface::RuntimeConstructor;
 use runtime_interface::RuntimeInterface;
+use web_time::Duration;
 use tracing::{BamlTracer, TracingSpan};
+use crate::internal::llm_client::LLMCompleteResponseMetadata;
 use type_builder::TypeBuilder;
 pub use types::*;
 
@@ -344,9 +348,26 @@ impl BamlRuntime {
                     let fn_call_expr = Expr::App(Arc::new(fn_expr), Arc::new(params_expr), ());
                     let res = eval_expr::eval_to_value(&env, &fn_call_expr).await.unwrap().unwrap();
                     let res2 = ResponseBamlValue( res.map_meta(|_| (vec![], vec![], Completion::default())));
+
+                    let llm_response = LLMResponse::Success(LLMCompleteResponse {
+                        client: "openai".to_string(),
+                        model: "gpt-3.5-turbo".to_string(),
+                        prompt: RenderedPrompt::Completion("Sample raw response".to_string()),
+                        request_options: BamlMap::new(),
+                        content: "Sample raw response".to_string(),
+                        start_time: SystemTime::now(),
+                        latency: Duration::from_millis(2025),
+                        metadata: LLMCompleteResponseMetadata {
+                            baml_is_complete: true,
+                            finish_reason: Some("stop".to_string()),
+                            prompt_tokens: Some(50),
+                            output_tokens: Some(50),
+                            total_tokens: Some(100),
+                        },
+                    });
                     Ok(FunctionResult::new(
                         OrchestrationScope{ scope: vec![]},
-                        LLMResponse::InternalFailure("No LLM function".to_string()),
+                        llm_response,
                         Some(Ok(res2))
                     ))
                 }

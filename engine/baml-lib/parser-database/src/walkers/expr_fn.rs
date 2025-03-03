@@ -2,7 +2,7 @@ use internal_baml_schema_ast::ast;
 use baml_types::expr::{Expr};
 use internal_baml_schema_ast::ast::{TopLevelAssignment, ExprFn, WithName};
 
-use super::Walker;
+use super::{ConfigurationWalker, Walker};
 
 /// Walker for top level assignments.
 pub type TopLevelAssignmentWalker<'db> = Walker<'db, ast::TopLevelAssignmentId>;
@@ -42,5 +42,20 @@ impl <'db> ExprFnWalker<'db> {
     /// Return the arguments of the function.
     pub fn args(&self) -> &ast::BlockArgs {
         &self.db.ast[self.id].args
+    }
+
+    /// All the test cases for this function.
+    pub fn walk_tests(self) -> impl ExactSizeIterator<Item = ConfigurationWalker<'db>> {
+        let mut tests = self
+            .db
+            .walk_test_cases()
+            .filter(|w| w.test_case().functions.iter().any(|f| f.0 == self.name()))
+            .collect::<Vec<_>>();
+
+        // log::debug!("Found {} tests for function {}", tests.len(), self.name());
+
+        tests.sort_by(|a, b| a.name().cmp(b.name()));
+
+        tests.into_iter()
     }
 }

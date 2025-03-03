@@ -20,6 +20,7 @@ pub type Field = repr::Node<repr::Field>;
 pub type FieldType = baml_types::FieldType;
 pub type TypeValue = baml_types::TypeValue;
 pub type FunctionNode = repr::Node<repr::Function>;
+pub type ExprFunctionNode = repr::Node<repr::ExprFunction>;
 #[allow(dead_code)]
 pub(super) type Function = repr::Function;
 pub(super) type FunctionArgs = repr::FunctionArgs;

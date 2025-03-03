@@ -9,11 +9,36 @@ use internal_llm_client::ClientSpec;
 use std::collections::HashSet;
 
 use super::{
-    repr::{self, FunctionConfig, TypeBuilderEntry, WithRepr},
-    Class, Client, Enum, EnumValue, Field, FieldType, FunctionNode, IRHelper, Impl, RetryPolicy,
-    TemplateString, TestCase, TypeAlias, Walker,
+    repr::{self, ExprFunction, FunctionConfig, TypeBuilderEntry, WithRepr}, Class, Client, Enum, EnumValue, ExprFunctionNode, Field, FieldType, FunctionNode, IRHelper, Impl, RetryPolicy, TemplateString, TestCase, TypeAlias, Walker
 };
 use crate::ir::jinja_helpers::render_expression;
+
+impl<'a> Walker<'a, &'a ExprFunctionNode> {
+    pub fn name(&self) -> &'a str {
+        self.elem().name.as_str()
+    }
+
+
+    pub fn walk_tests(
+        &'a self,
+    ) -> impl Iterator<Item = Walker<'a, (&'a ExprFunctionNode, &'a TestCase)>> {
+        self.elem().tests().iter().map(|i| Walker {
+            db: self.db,
+            item: (self.item, i),
+        })
+    }
+
+    pub fn elem(&self) -> &'a repr::ExprFunction {
+        &self.item.elem
+    }
+
+    pub fn find_test(
+        &'a self,
+        test_name: &str,
+    ) -> Option<Walker<'a, (&'a ExprFunctionNode, &'a TestCase)>>{
+        self.walk_tests().find(|t| t.item.1.elem.name == test_name)
+    }
+}
 
 impl<'a> Walker<'a, &'a FunctionNode> {
     pub fn name(&self) -> &'a str {

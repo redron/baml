@@ -135,6 +135,11 @@ impl<'db> crate::ParserDatabase {
     }
 
     /// Find a function by name.
+    pub fn find_expr_fn_by_name(&'db self, name: &str) -> Option<ExprFnWalker<'db>> {
+        self.walk_expr_fns().find(|expr_fn| expr_fn.name() == name)
+    }
+
+    /// Find a function by name.
     pub fn find_retry_policy(&'db self, name: &str) -> Option<ConfigurationWalker<'db>> {
         self.interner
             .lookup(name)

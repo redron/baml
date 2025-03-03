@@ -110,13 +110,32 @@ impl WithRepr<ExprFunction> for ExprFnWalker<'_> {
         let body = convert_function_body(self.expr_fn().body.to_owned(), db)?;
         let args = self.expr_fn().args.args.iter().map(|(arg_name, arg_type)| (arg_name.to_string(), arg_type.field_type.repr(db).unwrap())).collect();
         let arg_names = self.expr_fn().args.args.iter().map(|(arg_name, _arg_type)| arg_name.to_string()).collect();
+        let tests = self.walk_tests().map(|e| e.node(db)).collect::<Result<Vec<_>>>()?;
         let expr_fn = ExprFunction {
             name: self.expr_fn().name.to_string(),
             inputs: args,
             output: self.expr_fn().return_type.clone().unwrap().repr(db)?,
             body: Expr::Lambda(arg_names, Arc::new(body), ()),
+            tests,
         };
         Ok(expr_fn)
+    }
+}
+
+impl WithRepr<Function> for ExprFnWalker<'_> {
+    fn repr(&self, db: &ParserDatabase) -> Result<Function> {
+        let body = convert_function_body(self.expr_fn().body.to_owned(), db)?;
+        let args = self.expr_fn().args.args.iter().map(|(arg_name, arg_type)| (arg_name.to_string(), arg_type.field_type.repr(db).unwrap())).collect();
+        let function = Function {
+            name: self.expr_fn().name.to_string(),
+            inputs: args,
+            output: self.expr_fn().return_type.clone().unwrap().repr(db)?,
+            configs: vec![],
+            default_config: "".to_string(),
+            tests: vec![],
+            // body: Expr::Lambda(arg_names, Arc::new(body), ()),
+        };
+        Ok(function)
     }
 }
 
@@ -247,6 +266,26 @@ impl IntermediateRepr {
     pub fn walk_functions(&self) -> impl ExactSizeIterator<Item = Walker<'_, &Node<Function>>> {
         self.functions.iter().map(|e| Walker { db: self, item: e })
     }
+
+    pub fn expr_fns_as_functions(&self) -> Vec<Node<Function>> {
+        self.expr_fns.iter().map(|efn| {
+            Node {
+                elem: efn.elem.predend_to_be_llm_function(),
+                attributes: efn.attributes.clone(),
+            }
+        }).collect::<Vec<_>>()
+    }
+
+    // pub fn walk_functions_and_expr_fns(&self) -> impl xactSizeIterator<Item = Walker<'_, &Node<Function>>> {
+    //     let fake_functions = self.expr_fns.iter().map(|efn| {
+    //         Node {
+    //             elem: efn.elem.predend_to_be_llm_function(),
+    //             attributes: efn.attributes,
+    //         }
+    //     }).collect::<Vec<_>>();
+    //     self.functions.iter().chain(fake_functions.iter()).map(|e| Walker { db: self, item: e })
+    //     .map(|e| Walker { db: self, item: e })
+    // }
 
     pub fn walk_toplevel_assignments(&self) -> impl ExactSizeIterator<Item = Walker<'_, &Node<TopLevelAssignment>>> {
         self.toplevel_assignments.iter().map(|e| Walker { db: self, item: e })
@@ -852,10 +891,10 @@ impl WithRepr<TemplateString> for TemplateStringWalker<'_> {
 }
 type EnumId = String;
 
-#[derive(serde::Serialize, Debug)]
+#[derive(Clone, serde::Serialize, Debug)]
 pub struct EnumValue(pub String);
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Enum {
     pub name: EnumId,
     pub values: Vec<(Node<EnumValue>, Option<Docstring>)>,
@@ -915,10 +954,10 @@ impl WithRepr<Enum> for EnumWalker<'_> {
     }
 }
 
-#[derive(serde::Serialize, Debug)]
+#[derive(Clone, serde::Serialize, Debug)]
 pub struct Docstring(pub String);
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Field {
     pub name: String,
     pub r#type: Node<FieldType>,
@@ -958,7 +997,7 @@ impl WithRepr<Field> for FieldWalker<'_> {
 type ClassId = String;
 
 /// A BAML Class.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Class {
     /// User defined class name.
     pub name: ClassId,
@@ -1023,7 +1062,7 @@ impl Class {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TypeAlias {
     pub name: String,
     pub r#type: Node<FieldType>,
@@ -1149,6 +1188,7 @@ pub struct ExprFunction {
     pub inputs: Vec<(String, FieldType)>,
     pub output: FieldType,
     pub body: Expr<(),()>,
+    pub tests: Vec<Node<TestCase>>,
 }
 
 impl ExprFunction {
@@ -1157,10 +1197,14 @@ impl ExprFunction {
             name: self.name.clone(),
             inputs: self.inputs.clone(),
             output: self.output.clone(),
-            tests: vec![],
+            tests: self.tests.clone(),
             configs: vec![],
             default_config: "default_config".to_string(),
         }
+    }
+
+    pub fn tests(&self) -> &Vec<Node<TestCase>> {
+        &self.tests
     }
 }
 
@@ -1336,7 +1380,7 @@ impl WithRepr<RetryPolicy> for ConfigurationWalker<'_> {
 }
 
 // TODO: #1343 Temporary solution until we implement scoping in the AST.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum TypeBuilderEntry {
     Enum(Node<Enum>),
     Class(Node<Class>),
@@ -1344,14 +1388,14 @@ pub enum TypeBuilderEntry {
 }
 
 // TODO: #1343 Temporary solution until we implement scoping in the AST.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TestTypeBuilder {
     pub entries: Vec<TypeBuilderEntry>,
     pub recursive_classes: Vec<IndexSet<String>>,
     pub recursive_aliases: Vec<IndexMap<String, FieldType>>,
 }
 
-#[derive(serde::Serialize, Debug)]
+#[derive(Clone, serde::Serialize, Debug)]
 pub struct TestCaseFunction(String);
 
 impl TestCaseFunction {
@@ -1360,7 +1404,7 @@ impl TestCaseFunction {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct TestCase {
     pub name: String,
     pub functions: Vec<Node<TestCaseFunction>>,
@@ -1740,5 +1784,29 @@ mod tests {
 
         assert_eq!(constraints[2].level, ConstraintLevel::Check);
         assert_eq!(constraints[2].label, Some("gt_ten".to_string()));
+    }
+
+    #[test]
+    fn test_expr_fn_tests() {
+        let ir = make_test_ir(
+            r##"
+            fn Foo(x: int) -> int {
+                x
+            }
+
+            test FooTest {
+                functions [Foo]
+                args {
+                    x 1
+                }
+            }
+        "##,
+        )
+        .unwrap();
+
+        let function = ir.find_expr_fn("Foo").unwrap();
+        let test = ir.find_expr_fn_test(&function, "FooTest").unwrap();
+        assert_eq!(test.item.1.elem.functions.len(), 1);
+        assert_eq!(test.item.1.elem.functions[0].elem.name(), "Foo");
     }
 }
