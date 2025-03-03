@@ -337,7 +337,7 @@ impl BamlRuntime {
                         .call_function_impl(function_name, params, rctx)
                         .await
                 } else {
-                    let fn_expr = self.inner.ir().expr_fns.iter().find(|f| f.elem.0 == function_name).unwrap().elem.1.clone();
+                    let fn_expr = self.inner.ir().expr_fns.iter().find(|f| f.elem.name == function_name).unwrap().elem.body.clone();
                     let context = eval_expr::initial_context(&self.inner.ir());
                     let env = EvalEnv { context, runtime: self };
                     let params_expr = Expr::ArgsTuple(params.iter().map(|(k, v)| Expr::Atom(BamlValueWithMeta::with_default_meta(v), ())).collect(), ());

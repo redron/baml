@@ -65,7 +65,7 @@ impl <T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug> Expr<T,U> {
                     Expr::ArgsTuple(args, _) => args.iter().map(|arg| arg.dump_str()).collect::<Vec<_>>().join(", "),
                     _ => format!("(NON_ARGS_TUPLE {})", args.dump_str()),
                 };
-                format!("{}({})", func.dump_str(), args_str)
+                format!("({})({})", func.dump_str(), args_str)
             },
             Expr::Let(name, expr, body, _) => format!("Let {} = {} in {}", name, expr.dump_str(), body.dump_str()),
             Expr::ArgsTuple(args, _) => format!("ArgsTuple({:?})", args.iter().map(|arg| arg.dump_str()).collect::<Vec<_>>()),

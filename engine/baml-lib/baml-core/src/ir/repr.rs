@@ -31,7 +31,7 @@ pub struct IntermediateRepr {
     classes: Vec<Node<Class>>,
     type_aliases: Vec<Node<TypeAlias>>,
     pub functions: Vec<Node<Function>>,
-    pub expr_fns: Vec<Node<(Name, Expr<(),()>)>>,
+    pub expr_fns: Vec<Node<ExprFunction>>,
     pub toplevel_assignments: Vec<Node<TopLevelAssignment>>,
     clients: Vec<Node<Client>>,
     retry_policies: Vec<Node<RetryPolicy>>,
@@ -54,6 +54,7 @@ pub struct TopLevelAssignment {
     pub name: Node<String>,
     pub expr: Node<Expr<(),()>>,
 }
+
 
 impl WithRepr<TopLevelAssignment> for TopLevelAssignmentWalker<'_> {
     fn attributes(&self, _: &ParserDatabase) -> NodeAttributes {
@@ -104,11 +105,18 @@ impl WithRepr<Expr<(),()>> for ast::ExprWithSpan {
     }
 }
 
-impl WithRepr<(Name, Expr<(),()>)> for ExprFnWalker<'_> {
-    fn repr(&self, db: &ParserDatabase) -> Result<(Name, Expr<(),()>)> {
+impl WithRepr<ExprFunction> for ExprFnWalker<'_> {
+    fn repr(&self, db: &ParserDatabase) -> Result<ExprFunction> {
         let body = convert_function_body(self.expr_fn().body.to_owned(), db)?;
-        let args = self.expr_fn().args.args.iter().map(|(arg_name, _arg_type)| arg_name.to_string()).collect();
-        Ok((self.expr_fn().name.to_string(), Expr::Lambda(args, Arc::new(body), ())))
+        let args = self.expr_fn().args.args.iter().map(|(arg_name, arg_type)| (arg_name.to_string(), arg_type.field_type.repr(db).unwrap())).collect();
+        let arg_names = self.expr_fn().args.args.iter().map(|(arg_name, _arg_type)| arg_name.to_string()).collect();
+        let expr_fn = ExprFunction {
+            name: self.expr_fn().name.to_string(),
+            inputs: args,
+            output: self.expr_fn().return_type.clone().unwrap().repr(db)?,
+            body: Expr::Lambda(arg_names, Arc::new(body), ()),
+        };
+        Ok(expr_fn)
     }
 }
 
@@ -244,7 +252,10 @@ impl IntermediateRepr {
         self.toplevel_assignments.iter().map(|e| Walker { db: self, item: e })
     }
 
-    pub fn walk_expr_fns(&self) -> impl ExactSizeIterator<Item = Walker<'_, &Node<(Name, Expr<(),()>)>>> {
+    // pub fn walk_expr_fns(&self) -> impl ExactSizeIterator<Item = Walker<'_, &Node<(Name, Expr<(),()>)>>> {
+    //     self.expr_fns.iter().map(|e| Walker { db: self, item: e })
+    // }
+    pub fn walk_expr_fns(&self) -> impl ExactSizeIterator<Item = Walker<'_, &Node<ExprFunction>>> {
         self.expr_fns.iter().map(|e| Walker { db: self, item: e })
     }
 
@@ -455,7 +466,7 @@ impl IntermediateRepr {
 //   [x] rename lockfile/mod.rs to ir/mod.rs
 //   [x] wire Result<> type through, need this to be more sane
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct NodeAttributes {
     /// Map of attributes on the corresponding IR node.
     ///
@@ -584,7 +595,7 @@ fn to_ir_attributes(
 }
 
 /// Nodes allow attaching metadata to a given IR entity: attributes, source location, etc
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Node<T> {
     pub attributes: NodeAttributes,
     pub elem: T,
@@ -1130,6 +1141,27 @@ pub struct FunctionConfig {
     pub prompt_template: String,
     pub prompt_span: ast::Span,
     pub client: ClientSpec,
+}
+
+#[derive(Debug)]
+pub struct ExprFunction {
+    pub name: FunctionId,
+    pub inputs: Vec<(String, FieldType)>,
+    pub output: FieldType,
+    pub body: Expr<(),()>,
+}
+
+impl ExprFunction {
+    pub fn predend_to_be_llm_function(&self) -> Function {
+        Function {
+            name: self.name.clone(),
+            inputs: self.inputs.clone(),
+            output: self.output.clone(),
+            tests: vec![],
+            configs: vec![],
+            default_config: "default_config".to_string(),
+        }
+    }
 }
 
 // impl std::fmt::Display for ClientSpec {
