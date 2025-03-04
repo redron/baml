@@ -2,13 +2,17 @@ use std::{collections::HashSet, sync::Arc};
 
 use anyhow::{anyhow, Result};
 use baml_types::{
-    expr::{Expr, Name}, BamlValueWithMeta, Constraint, ConstraintLevel, FieldType, JinjaExpression, Resolvable, StreamingBehavior, StringOr, UnresolvedValue
+    expr::{Expr, Name},
+    BamlValueWithMeta, Constraint, ConstraintLevel, FieldType, JinjaExpression, Resolvable,
+    StreamingBehavior, StringOr, UnresolvedValue,
 };
 use either::Either;
 use indexmap::{IndexMap, IndexSet};
 use internal_baml_parser_database::{
     walkers::{
-        ClassWalker, ClientWalker, ConfigurationWalker, EnumValueWalker, EnumWalker, ExprFnWalker, FieldWalker, FunctionWalker, TemplateStringWalker, TopLevelAssignmentWalker, TypeAliasWalker, Walker as AstWalker
+        ClassWalker, ClientWalker, ConfigurationWalker, EnumValueWalker, EnumWalker, ExprFnWalker,
+        FieldWalker, FunctionWalker, TemplateStringWalker, TopLevelAssignmentWalker,
+        TypeAliasWalker, Walker as AstWalker,
     },
     Attributes, ParserDatabase, PromptAst, RetryPolicyStrategy, TypeWalker,
 };
@@ -52,9 +56,8 @@ pub struct IntermediateRepr {
 #[derive(Debug)]
 pub struct TopLevelAssignment {
     pub name: Node<String>,
-    pub expr: Node<Expr<(),()>>,
+    pub expr: Node<Expr<(), ()>>,
 }
-
 
 impl WithRepr<TopLevelAssignment> for TopLevelAssignmentWalker<'_> {
     fn attributes(&self, _: &ParserDatabase) -> NodeAttributes {
@@ -64,12 +67,28 @@ impl WithRepr<TopLevelAssignment> for TopLevelAssignmentWalker<'_> {
 
     fn repr(&self, db: &ParserDatabase) -> Result<TopLevelAssignment> {
         // This is a placeholder implementation
-        let name = self.top_level_assignment().stmt.identifier.name().to_string();
+        let name = self
+            .top_level_assignment()
+            .stmt
+            .identifier
+            .name()
+            .to_string();
         let final_expr = self.top_level_assignment().stmt.body.expr.repr(db)?;
-        let expr = self.top_level_assignment().stmt.body.stmts.iter().fold(final_expr, |acc, stmt| {
-            let stmt_expr = stmt.body.expr.repr(db).expect("TODO: Implement this");
-            Expr::Let(stmt.identifier.name().to_string(), Arc::new(stmt_expr), Arc::new(acc), ())
-        });
+        let expr =
+            self.top_level_assignment()
+                .stmt
+                .body
+                .stmts
+                .iter()
+                .fold(final_expr, |acc, stmt| {
+                    let stmt_expr = stmt.body.expr.repr(db).expect("TODO: Implement this");
+                    Expr::Let(
+                        stmt.identifier.name().to_string(),
+                        Arc::new(stmt_expr),
+                        Arc::new(acc),
+                        (),
+                    )
+                });
         Ok(TopLevelAssignment {
             name: Node {
                 elem: name,
@@ -83,13 +102,16 @@ impl WithRepr<TopLevelAssignment> for TopLevelAssignmentWalker<'_> {
     }
 }
 
-
-impl WithRepr<Expr<(),()>> for ast::ExprWithSpan {
-    fn repr(&self, db: &ParserDatabase) -> Result<Expr<(),()>> {
+impl WithRepr<Expr<(), ()>> for ast::ExprWithSpan {
+    fn repr(&self, db: &ParserDatabase) -> Result<Expr<(), ()>> {
         match &self.expr {
             ast::Expr::Atom(expr) => Ok(expr.repr(db)?),
             ast::Expr::Lambda(args, body) => {
-                let args = args.arguments.iter().filter_map(|arg| arg.value.as_string_value().map(|v| v.0.to_string())).collect();
+                let args = args
+                    .arguments
+                    .iter()
+                    .filter_map(|arg| arg.value.as_string_value().map(|v| v.0.to_string()))
+                    .collect();
                 let body = convert_function_body(*body.to_owned(), db)?;
                 Ok(Expr::Lambda(args, Arc::new(body), ()))
             }
@@ -99,7 +121,11 @@ impl WithRepr<Expr<(),()>> for ast::ExprWithSpan {
                     .iter()
                     .map(|arg| arg.repr(db).expect("TODO: Handle errors"))
                     .collect();
-                Ok(Expr::App(Arc::new(func), Arc::new(Expr::ArgsTuple(args, ())), ()))
+                Ok(Expr::App(
+                    Arc::new(func),
+                    Arc::new(Expr::ArgsTuple(args, ())),
+                    (),
+                ))
             }
         }
     }
@@ -108,9 +134,26 @@ impl WithRepr<Expr<(),()>> for ast::ExprWithSpan {
 impl WithRepr<ExprFunction> for ExprFnWalker<'_> {
     fn repr(&self, db: &ParserDatabase) -> Result<ExprFunction> {
         let body = convert_function_body(self.expr_fn().body.to_owned(), db)?;
-        let args = self.expr_fn().args.args.iter().map(|(arg_name, arg_type)| (arg_name.to_string(), arg_type.field_type.repr(db).unwrap())).collect();
-        let arg_names = self.expr_fn().args.args.iter().map(|(arg_name, _arg_type)| arg_name.to_string()).collect();
-        let tests = self.walk_tests().map(|e| e.node(db)).collect::<Result<Vec<_>>>()?;
+        let args = self
+            .expr_fn()
+            .args
+            .args
+            .iter()
+            .map(|(arg_name, arg_type)| {
+                (arg_name.to_string(), arg_type.field_type.repr(db).unwrap())
+            })
+            .collect();
+        let arg_names = self
+            .expr_fn()
+            .args
+            .args
+            .iter()
+            .map(|(arg_name, _arg_type)| arg_name.to_string())
+            .collect();
+        let tests = self
+            .walk_tests()
+            .map(|e| e.node(db))
+            .collect::<Result<Vec<_>>>()?;
         let expr_fn = ExprFunction {
             name: self.expr_fn().name.to_string(),
             inputs: args,
@@ -125,7 +168,15 @@ impl WithRepr<ExprFunction> for ExprFnWalker<'_> {
 impl WithRepr<Function> for ExprFnWalker<'_> {
     fn repr(&self, db: &ParserDatabase) -> Result<Function> {
         let body = convert_function_body(self.expr_fn().body.to_owned(), db)?;
-        let args = self.expr_fn().args.args.iter().map(|(arg_name, arg_type)| (arg_name.to_string(), arg_type.field_type.repr(db).unwrap())).collect();
+        let args = self
+            .expr_fn()
+            .args
+            .args
+            .iter()
+            .map(|(arg_name, arg_type)| {
+                (arg_name.to_string(), arg_type.field_type.repr(db).unwrap())
+            })
+            .collect();
         let function = Function {
             name: self.expr_fn().name.to_string(),
             inputs: args,
@@ -139,31 +190,73 @@ impl WithRepr<Function> for ExprFnWalker<'_> {
     }
 }
 
-fn convert_function_body(function_body: ast::expr::FunctionBody, db: &ParserDatabase) -> Result<Expr<(),()>> {
-        let final_expr= function_body.expr.repr(db)?;
-        let expr = function_body.stmts.iter().fold(final_expr, |acc, stmt| {
-            let stmt_expr = stmt.body.expr.repr(db).expect("TODO: Handle errors");
-            Expr::Let(stmt.identifier.name().to_string(), Arc::new(stmt_expr), Arc::new(acc), ())
-        });
-        Ok(expr)
+fn convert_function_body(
+    function_body: ast::expr::FunctionBody,
+    db: &ParserDatabase,
+) -> Result<Expr<(), ()>> {
+    let final_expr = function_body.expr.repr(db)?;
+    let expr = function_body.stmts.iter().fold(final_expr, |acc, stmt| {
+        let stmt_expr = stmt.body.expr.repr(db).expect("TODO: Handle errors");
+        Expr::Let(
+            stmt.identifier.name().to_string(),
+            Arc::new(stmt_expr),
+            Arc::new(acc),
+            (),
+        )
+    });
+    Ok(expr)
 }
 
 // TODO: This is a temporary implementation.
-impl WithRepr<Expr<(),()>> for ast::Expression {
-    fn repr(&self, db: &ParserDatabase) -> Result<Expr<(),()>> {
+impl WithRepr<Expr<(), ()>> for ast::Expression {
+    fn repr(&self, db: &ParserDatabase) -> Result<Expr<(), ()>> {
         match self {
-            ast::Expression::BoolValue(val, _) => Ok(Expr::Atom(BamlValueWithMeta::Bool(*val,()), ())),
-            ast::Expression::NumericValue(val, _) => {
-                val.parse::<i64>().map(|v| Expr::Atom(BamlValueWithMeta::Int(v,()), ()))
-                .or_else(|_| val.parse::<f64>()
-                .map(|v| Expr::Atom(BamlValueWithMeta::Float(v,()), ()))
-                .or_else(|_| Err(anyhow!("Invalid numeric value: {}", val))))
-            },
-            ast::Expression::StringValue(val, _) => Ok(Expr::Atom(BamlValueWithMeta::String(val.to_string(),()), ())),
-            ast::Expression::RawStringValue(val) => Ok(Expr::Atom(BamlValueWithMeta::String(val.value().to_string(),()), ())),
-            ast::Expression::JinjaExpressionValue(val, _) => todo!(), // Ok(BamlValueWithMeta::JinjaExpressionValue(val.repr(db)?,())),
-            ast::Expression::Array(vals, _) => Ok(Expr::Atom(BamlValueWithMeta::List(vals.iter().map(|v| v.repr(db).unwrap().as_atom().unwrap().clone()).collect(),()), ())),
-            ast::Expression::Map(vals, _) => todo!(), // Ok(BamlValueWithMeta::Map(vals.iter().map(|(k, v)| (k.repr(db)?, v.repr(db)?)).collect(),())),
+            ast::Expression::BoolValue(val, _) => {
+                Ok(Expr::Atom(BamlValueWithMeta::Bool(*val, ()), ()))
+            }
+            ast::Expression::NumericValue(val, _) => val
+                .parse::<i64>()
+                .map(|v| Expr::Atom(BamlValueWithMeta::Int(v, ()), ()))
+                .or_else(|_| {
+                    val.parse::<f64>()
+                        .map(|v| Expr::Atom(BamlValueWithMeta::Float(v, ()), ()))
+                        .or_else(|_| Err(anyhow!("Invalid numeric value: {}", val)))
+                }),
+            ast::Expression::StringValue(val, _) => Ok(Expr::Atom(
+                BamlValueWithMeta::String(val.to_string(), ()),
+                (),
+            )),
+            ast::Expression::RawStringValue(val) => Ok(Expr::Atom(
+                BamlValueWithMeta::String(val.value().to_string(), ()),
+                (),
+            )),
+            ast::Expression::JinjaExpressionValue(val, _) => Ok(Expr::Atom(
+                BamlValueWithMeta::String(val.to_string(), ()), // TODO: Probably wrong.
+                (),
+            )),
+            ast::Expression::Array(vals, _) => Ok(Expr::Atom(
+                BamlValueWithMeta::List(
+                    vals.iter()
+                        .map(|v| v.repr(db).unwrap().as_atom().unwrap().clone())
+                        .collect(),
+                    (),
+                ),
+                (),
+            )),
+            ast::Expression::Map(vals, _) => Ok(Expr::Atom(
+                BamlValueWithMeta::Map(
+                    vals.iter()
+                        .map(|(k, v)| {
+                            (
+                                k.to_string(), // TODO: Probably wrong.
+                                v.repr(db).unwrap().as_atom().unwrap().clone(),
+                            )
+                        })
+                        .collect(),
+                    (),
+                ),
+                (),
+            )),
             ast::Expression::Identifier(id) => Ok(Expr::Var(id.name().to_string(), ())),
         }
     }
@@ -268,12 +361,13 @@ impl IntermediateRepr {
     }
 
     pub fn expr_fns_as_functions(&self) -> Vec<Node<Function>> {
-        self.expr_fns.iter().map(|efn| {
-            Node {
+        self.expr_fns
+            .iter()
+            .map(|efn| Node {
                 elem: efn.elem.predend_to_be_llm_function(),
                 attributes: efn.attributes.clone(),
-            }
-        }).collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
     }
 
     // pub fn walk_functions_and_expr_fns(&self) -> impl xactSizeIterator<Item = Walker<'_, &Node<Function>>> {
@@ -287,8 +381,12 @@ impl IntermediateRepr {
     //     .map(|e| Walker { db: self, item: e })
     // }
 
-    pub fn walk_toplevel_assignments(&self) -> impl ExactSizeIterator<Item = Walker<'_, &Node<TopLevelAssignment>>> {
-        self.toplevel_assignments.iter().map(|e| Walker { db: self, item: e })
+    pub fn walk_toplevel_assignments(
+        &self,
+    ) -> impl ExactSizeIterator<Item = Walker<'_, &Node<TopLevelAssignment>>> {
+        self.toplevel_assignments
+            .iter()
+            .map(|e| Walker { db: self, item: e })
     }
 
     // pub fn walk_expr_fns(&self) -> impl ExactSizeIterator<Item = Walker<'_, &Node<(Name, Expr<(),()>)>>> {
@@ -1171,9 +1269,6 @@ pub struct Function {
     pub default_config: String,
 }
 
-
-
-
 #[derive(Debug)]
 pub struct FunctionConfig {
     pub name: String,
@@ -1187,7 +1282,7 @@ pub struct ExprFunction {
     pub name: FunctionId,
     pub inputs: Vec<(String, FieldType)>,
     pub output: FieldType,
-    pub body: Expr<(),()>,
+    pub body: Expr<(), ()>,
     pub tests: Vec<Node<TestCase>>,
 }
 
@@ -1201,6 +1296,10 @@ impl ExprFunction {
             configs: vec![],
             default_config: "default_config".to_string(),
         }
+    }
+
+    pub fn inputs(&self) -> &Vec<(String, FieldType)> {
+        &self.inputs
     }
 
     pub fn tests(&self) -> &Vec<Node<TestCase>> {

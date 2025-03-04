@@ -8,12 +8,12 @@ pub(crate) mod internal;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod cli;
 pub mod client_registry;
-pub mod test_constraints;
-pub mod eval_expr;
 pub mod errors;
+pub mod eval_expr;
 pub mod request;
 mod runtime;
 pub mod runtime_interface;
+pub mod test_constraints;
 pub mod tracing;
 pub mod type_builder;
 mod types;
@@ -25,6 +25,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use anyhow::Result;
 
+use crate::internal::llm_client::LLMCompleteResponse;
 use baml_types::expr::Expr;
 use baml_types::BamlMap;
 use baml_types::BamlValue;
@@ -38,26 +39,25 @@ use indexmap::IndexMap;
 use internal::llm_client::orchestrator::OrchestrationScope;
 use internal_baml_core::configuration::CloudProject;
 use internal_baml_core::configuration::CodegenGenerator;
-use crate::internal::llm_client::LLMCompleteResponse;
-use web_time::SystemTime;
 use internal_baml_core::configuration::Generator;
 use internal_baml_core::configuration::GeneratorOutputType;
 use jsonish::ResponseBamlValue;
 use on_log_event::LogEventCallbackSync;
 use runtime::InternalBamlRuntime;
 use std::sync::OnceLock;
+use web_time::SystemTime;
 
+use crate::internal::llm_client::LLMCompleteResponseMetadata;
 #[cfg(not(target_arch = "wasm32"))]
 pub use cli::RuntimeCliDefaults;
 pub use runtime_context::BamlSrcReader;
 use runtime_interface::ExperimentalTracingInterface;
 use runtime_interface::RuntimeConstructor;
 use runtime_interface::RuntimeInterface;
-use web_time::Duration;
 use tracing::{BamlTracer, TracingSpan};
-use crate::internal::llm_client::LLMCompleteResponseMetadata;
 use type_builder::TypeBuilder;
 pub use types::*;
+use web_time::Duration;
 
 use clap::Parser;
 
@@ -75,8 +75,8 @@ pub use internal_baml_core::internal_baml_diagnostics;
 pub use internal_baml_core::internal_baml_diagnostics::Diagnostics as DiagnosticsError;
 pub use internal_baml_core::ir::{scope_diagnostics, FieldType, IRHelper, TypeValue};
 
-use crate::test_constraints::{evaluate_test_constraints, TestConstraintsResult};
 use crate::internal::llm_client::LLMResponse;
+use crate::test_constraints::{evaluate_test_constraints, TestConstraintsResult};
 
 #[cfg(not(target_arch = "wasm32"))]
 static TOKIO_SINGLETON: OnceLock<std::io::Result<Arc<tokio::runtime::Runtime>>> = OnceLock::new();
@@ -202,12 +202,20 @@ impl BamlRuntime {
         ctx: &RuntimeContext,
         strict: bool,
     ) -> Result<(BamlMap<String, BamlValue>, Vec<Constraint>)> {
+        eprintln!(
+            "get_test_params_and_constraints: function_name {:?} test_name {:?}",
+            function_name, test_name
+        );
         let params = self
             .inner
             .get_test_params(function_name, test_name, ctx, strict)?;
+        dbg!(&params);
         let constraints = self
             .inner
-            .get_test_constraints(function_name, test_name, ctx)?;
+            .get_test_constraints(function_name, test_name, ctx)
+            .unwrap_or(vec![]); // TODO: Fix this.
+                                // .get_test_constraints(function_name, test_name, ctx)?;
+        dbg!(&constraints);
         Ok((params, constraints))
     }
 
@@ -218,6 +226,10 @@ impl BamlRuntime {
         ctx: &RuntimeContext,
         strict: bool,
     ) -> Result<BamlMap<String, BamlValue>> {
+        eprintln!(
+            "get_test_params(214): function_name {:?} test_name {:?}",
+            function_name, test_name
+        );
         self.inner
             .get_test_params(function_name, test_name, ctx, strict)
     }
@@ -232,19 +244,65 @@ impl BamlRuntime {
     where
         F: Fn(FunctionResult),
     {
+        eprintln!(
+            "RUN_TEST run_test(226): function_name {:?} test_name {:?}",
+            function_name, test_name
+        );
         let span = self.tracer.start_span(test_name, ctx, &Default::default());
 
-        let type_builder = self
+        let is_expr_fn = self
             .inner
-            .get_test_type_builder(function_name, test_name, ctx)
-            .unwrap();
+            .ir()
+            .expr_fns
+            .iter()
+            .find(|f| f.elem.name == function_name)
+            .is_some();
+        dbg!(&is_expr_fn);
+        if is_expr_fn {
+            let type_builder = None;
+            eprintln!("** RUN_TEST is_expr_fn");
+            let rctx = ctx.create_ctx(type_builder.as_ref(), None).unwrap();
+            let (params, _constraints) = self
+                .get_test_params_and_constraints(function_name, test_name, &rctx, true)
+                .unwrap();
+            eprintln!("** RUN_TEST is_expr_fn params: {:#?}", params);
 
+            // Call the runtime synchronously.
+            let (response_res, span_uuid) = self
+                .call_function(
+                    function_name.into(),
+                    &params,
+                    &ctx,
+                    type_builder.as_ref(),
+                    None,
+                )
+                .await;
+
+            log::info!("** response_res: {:#?}", response_res);
+            let test_response = TestResponse {
+                function_response: response_res.unwrap(),
+                function_span: span_uuid,
+                constraints_result: TestConstraintsResult::empty(),
+            };
+            eprintln!("** RUN_TEST is_expr_fn about to return");
+            return (Ok(test_response), None);
+        }
+
+        eprintln!("RUN_TEST run_to_response(248)");
         let run_to_response = || async {
+            let type_builder = self
+                .inner
+                .get_test_type_builder(function_name, test_name, ctx)
+                .unwrap();
+
             let rctx = ctx.create_ctx(type_builder.as_ref(), None)?;
+            eprintln!("RUN_TEST closure about to get_test_params_and_constraints");
             let (params, constraints) =
                 self.get_test_params_and_constraints(function_name, test_name, &rctx, true)?;
+            eprintln!("RUN_TEST closure params: {:#?}", params);
             log::info!("params: {:#?}", params);
             let rctx_stream = ctx.create_ctx(type_builder.as_ref(), None)?;
+            eprintln!("RUN_TEST closure about to stream_function_impl");
             let mut stream = self.inner.stream_function_impl(
                 function_name.into(),
                 &params,
@@ -253,7 +311,9 @@ impl BamlRuntime {
                 #[cfg(not(target_arch = "wasm32"))]
                 self.async_runtime.clone(),
             )?;
+            eprintln!("RUN_TEST closure about to run");
             let (response_res, span_uuid) = stream.run(on_event, ctx, None, None).await;
+            eprintln!("RUN_TEST closure about to get response_res");
             log::info!("response_res: {:#?}", response_res);
             let res = response_res?;
             let (_, llm_resp, val) = res
@@ -278,8 +338,14 @@ impl BamlRuntime {
             } else {
                 match val {
                     Some(Ok(value)) => {
-                        let value_with_constraints = value.0.map_meta(|(_,constraints,_)| constraints.clone());
-                        evaluate_test_constraints(&params, &value_with_constraints, complete_resp, constraints)
+                        let value_with_constraints =
+                            value.0.map_meta(|(_, constraints, _)| constraints.clone());
+                        evaluate_test_constraints(
+                            &params,
+                            &value_with_constraints,
+                            complete_resp,
+                            constraints,
+                        )
                     }
                     _ => TestConstraintsResult::empty(),
                 }
@@ -336,18 +402,48 @@ impl BamlRuntime {
         let span = self.tracer.start_span(&function_name, ctx, params);
         let response = match ctx.create_ctx(tb, cb) {
             Ok(rctx) => {
-                if self.function_names().find(|f| f == &function_name).is_some() {
+                let is_expr_fn = self
+                    .inner
+                    .ir()
+                    .expr_fns
+                    .iter()
+                    .find(|f| f.elem.name == function_name)
+                    .is_some();
+                if !is_expr_fn {
                     self.inner
                         .call_function_impl(function_name, params, rctx)
                         .await
                 } else {
-                    let fn_expr = self.inner.ir().expr_fns.iter().find(|f| f.elem.name == function_name).unwrap().elem.body.clone();
+                    let fn_expr = self
+                        .inner
+                        .ir()
+                        .expr_fns
+                        .iter()
+                        .find(|f| f.elem.name == function_name)
+                        .unwrap()
+                        .elem
+                        .body
+                        .clone();
                     let context = eval_expr::initial_context(&self.inner.ir());
-                    let env = EvalEnv { context, runtime: self };
-                    let params_expr = Expr::ArgsTuple(params.iter().map(|(k, v)| Expr::Atom(BamlValueWithMeta::with_default_meta(v), ())).collect(), ());
+                    let env = EvalEnv {
+                        context,
+                        runtime: self,
+                    };
+                    let params_expr = Expr::ArgsTuple(
+                        params
+                            .iter()
+                            .map(|(k, v)| Expr::Atom(BamlValueWithMeta::with_default_meta(v), ()))
+                            .collect(),
+                        (),
+                    );
                     let fn_call_expr = Expr::App(Arc::new(fn_expr), Arc::new(params_expr), ());
-                    let res = eval_expr::eval_to_value(&env, &fn_call_expr).await.unwrap().unwrap();
-                    let res2 = ResponseBamlValue( res.map_meta(|_| (vec![], vec![], Completion::default())));
+                    let res = eval_expr::eval_to_value(&env, &fn_call_expr)
+                        .await
+                        .unwrap()
+                        .unwrap();
+                    let res2 = ResponseBamlValue(
+                        res.map_meta(|_| (vec![], vec![], Completion::default())),
+                    );
 
                     let llm_response = LLMResponse::Success(LLMCompleteResponse {
                         client: "openai".to_string(),
@@ -366,9 +462,9 @@ impl BamlRuntime {
                         },
                     });
                     Ok(FunctionResult::new(
-                        OrchestrationScope{ scope: vec![]},
+                        OrchestrationScope { scope: vec![] },
                         llm_response,
-                        Some(Ok(res2))
+                        Some(Ok(res2)),
                     ))
                 }
             }

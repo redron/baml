@@ -6,7 +6,7 @@ mod walker;
 
 pub use ir_helpers::{
     scope_diagnostics, ArgCoercer, ClassFieldWalker, ClassWalker, ClientWalker, EnumValueWalker,
-    EnumWalker, FunctionWalker, IRHelper, RetryPolicyWalker, TemplateStringWalker, TestCaseWalker,
+    EnumWalker, ExprFunctionWalker, FunctionWalker, IRHelper, RetryPolicyWalker, TemplateStringWalker, TestCaseWalker,
 };
 
 pub(super) use repr::IntermediateRepr;

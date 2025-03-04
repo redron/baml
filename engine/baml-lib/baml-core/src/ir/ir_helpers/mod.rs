@@ -61,7 +61,7 @@ pub trait IRHelper {
     ) -> Result<TestCaseWalkerExpr<'a>>;
     fn check_function_params<'a>(
         &'a self,
-        function: &'a FunctionWalker<'a>,
+        function_params: &Vec<(String, FieldType)>,
         params: &BamlMap<String, BamlValue>,
         coerce_settings: ArgCoercer,
     ) -> Result<BamlValue>;
@@ -153,7 +153,10 @@ impl IRHelper for IntermediateRepr {
             Some(t) => Ok(t),
             None => {
                 // Get best match.
-                let tests = function.walk_tests().map(|t| t.item.1.elem.name.as_str()).collect::<Vec<_>>();
+                let tests = function
+                    .walk_tests()
+                    .map(|t| t.item.1.elem.name.as_str())
+                    .collect::<Vec<_>>();
                 error_not_found!("test", test_name, &tests)
             }
         }
@@ -208,15 +211,28 @@ impl IRHelper for IntermediateRepr {
     }
 
     fn find_expr_fn<'a>(&'a self, function_name: &str) -> Result<ExprFunctionWalker<'a>> {
-        match self.walk_expr_fns().find(|f| f.item.elem.name == function_name) {
+        let expr_fn_names = self
+            .walk_expr_fns()
+            .map(|f| f.item.elem.name.clone())
+            .collect::<Vec<_>>();
+        eprintln!(
+            "find_expr_fn: {:?} among {:?}",
+            function_name, expr_fn_names
+        );
+        match self
+            .walk_expr_fns()
+            .find(|f| f.item.elem.name == function_name)
+        {
             Some(f) => Ok(f),
 
-            None => todo!()
-            // None => {
-            //     // Get best match.
-            //     let functions = self.walk_expr_fns().map(|f| f.item.elem.name).collect::<Vec<_>>();
-            //     error_not_found!("function", function_name, &functions)
-            // }
+            None => {
+                // Get best match.
+                let functions = self
+                    .walk_expr_fns()
+                    .map(|f| f.item.elem.name.clone())
+                    .collect::<Vec<_>>();
+                error_not_found!("function", function_name, &functions)
+            }
         }
     }
 
@@ -272,11 +288,12 @@ impl IRHelper for IntermediateRepr {
 
     fn check_function_params<'a>(
         &'a self,
-        function: &'a FunctionWalker<'a>,
+        // function: &'a FunctionWalker<'a>,
+        function_params: &Vec<(String, FieldType)>,
         params: &BamlMap<String, BamlValue>,
         coerce_settings: ArgCoercer,
     ) -> Result<BamlValue> {
-        let function_params = function.inputs();
+        // let function_params = function.inputs();
 
         // Now check that all required parameters are present.
         let mut scope = ScopeStack::new();
@@ -1283,6 +1300,7 @@ mod tests {
         )
         .unwrap();
         let function = ir.find_function("Foo").unwrap();
+        let function_params = function.inputs();
         let params = vec![("a".to_string(), BamlValue::Int(1))]
             .into_iter()
             .collect();
@@ -1290,7 +1308,7 @@ mod tests {
             span_path: None,
             allow_implicit_cast_to_string: true,
         };
-        let res = ir.check_function_params(&function, &params, arg_coercer);
+        let res = ir.check_function_params(&function_params, &params, arg_coercer);
         assert!(res.is_err());
     }
 

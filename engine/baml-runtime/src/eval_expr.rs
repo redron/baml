@@ -10,12 +10,15 @@ pub struct EvalEnv<'a, T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug + 
     pub runtime: &'a BamlRuntime,
 }
 
-impl <'a, T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug + Default> EvalEnv<'a, T, U> {
+impl<'a, T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug + Default> EvalEnv<'a, T, U> {
     pub fn dump_ctx(&self) -> String {
-        self.context.iter().map(|(k, v)| format!("{}: {}", k, v.dump_str())).collect::<Vec<_>>().join("\n")
+        self.context
+            .iter()
+            .map(|(k, v)| format!("{}: {}", k, v.dump_str()))
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 }
-
 
 fn subst2<'a, T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug + Default>(
     expr: &Expr<T, U>,
@@ -23,8 +26,13 @@ fn subst2<'a, T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug + Default>(
     val: &Expr<T, U>,
     env: &EvalEnv<'a, T, U>,
 ) -> anyhow::Result<Expr<T, U>> {
-    eprintln!("SUBST2:\n[{} -> {}] in {:?}", var_name, val.dump_str(), expr);
-    let res: anyhow::Result<Expr<T,U>> = match expr {
+    eprintln!(
+        "SUBST2:\n[{} -> {}] in {:?}",
+        var_name,
+        val.dump_str(),
+        expr
+    );
+    let res: anyhow::Result<Expr<T, U>> = match expr {
         Expr::Var(expr_var_name, _) => {
             if expr_var_name == var_name {
                 Ok(val.clone())
@@ -35,16 +43,18 @@ fn subst2<'a, T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug + Default>(
                     Ok(expr.clone())
                 }
             }
-        },
+        }
         Expr::Atom(_, _) => Ok(expr.clone()),
         Expr::App(f, x, meta) => {
             let f2 = subst2(f, var_name, val, env)?;
             let x2 = subst2(x, var_name, val, env)?;
             Ok(Expr::App(Arc::new(f2), Arc::new(x2), meta.clone()))
         }
-        Expr::Lambda(params, body, meta) => {
-            Ok(Expr::Lambda(params.clone(), Arc::new(subst2(body, var_name, val, env)?), meta.clone()))
-        }
+        Expr::Lambda(params, body, meta) => Ok(Expr::Lambda(
+            params.clone(),
+            Arc::new(subst2(body, var_name, val, env)?),
+            meta.clone(),
+        )),
         Expr::ArgsTuple(args, meta) => {
             let mut new_args = Vec::new();
             for arg in args {
@@ -60,12 +70,23 @@ fn subst2<'a, T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug + Default>(
             } else {
                 let new_value = subst2(value, var_name, val, env)?;
                 let new_body = subst2(body, var_name, val, env)?;
-                Ok(Expr::Let(name.clone(), Arc::new(new_value), Arc::new(new_body), meta.clone()))
+                Ok(Expr::Let(
+                    name.clone(),
+                    Arc::new(new_value),
+                    Arc::new(new_body),
+                    meta.clone(),
+                ))
             }
         }
     };
     let res = res?;
-    eprintln!("SUBST2:\n[{} -> {}] in {:?} ===> {:?}", var_name, val.dump_str(), expr, res);
+    eprintln!(
+        "SUBST2:\n[{} -> {}] in {:?} ===> {:?}",
+        var_name,
+        val.dump_str(),
+        expr,
+        res
+    );
     Ok(res)
 }
 
@@ -77,6 +98,7 @@ async fn beta_reduce<'a, T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug 
 ) -> anyhow::Result<Expr<T, U>> {
     eprintln!("BETA_REDUCE:\n{}\n", expr.dump_str());
     match expr {
+        Expr::Atom(_, _) => Ok(expr.clone()),
         Expr::Let(name, value, body, meta) => {
             // Rewrite the let binding as an application.
             // e.g. (let x = y in f) => (\x y => f)
@@ -88,17 +110,26 @@ async fn beta_reduce<'a, T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug 
             match (f.as_ref(), x.as_ref()) {
                 (Expr::Lambda(params, body, _), Expr::ArgsTuple(args, _)) => {
                     eprintln!("About to beta reduce lambda");
-                    let pairs = params.iter().cloned().zip(args.iter().cloned()).collect::<Vec<_>>();
+                    let pairs = params
+                        .iter()
+                        .cloned()
+                        .zip(args.iter().cloned())
+                        .collect::<Vec<_>>();
                     dbg!(&pairs);
-                    let new_body = pairs.iter().fold(body.as_ref().clone(), |acc, (param, arg)| {
-                        subst2(&acc, &param, &arg, env).as_ref().unwrap().clone()
-                    });
+                    let new_body = pairs
+                        .iter()
+                        .fold(body.as_ref().clone(), |acc, (param, arg)| {
+                            subst2(&acc, &param, &arg, env).as_ref().unwrap().clone()
+                        });
                     eprintln!("BETA_REDUCE_LAMBDA_RESULT1: {}\n", new_body.dump_str());
                     Box::pin(beta_reduce(env, &new_body)).await
                 }
                 (Expr::Lambda(params, body, _), arg) => {
                     if params.len() != 1 {
-                        return Err(anyhow::anyhow!("Lambda takes exactly one argument: {:?}", expr));
+                        return Err(anyhow::anyhow!(
+                            "Lambda takes exactly one argument: {:?}",
+                            expr
+                        ));
                     }
                     let new_body = subst2(body, &params[0], arg, env).as_ref().unwrap().clone();
                     eprintln!("BETA_REDUCE_LAMBDA_RESULT2: {}\n", new_body.dump_str());
@@ -115,7 +146,11 @@ async fn beta_reduce<'a, T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug 
                     }
 
                     // let evaluated_args = args.clone().into_iter().map(|arg| Box::pin(eval_to_value(env, arg).await)).collect::<anyhow::Result<Vec<_>>>()?;
-                    let params = evaluated_args.into_iter().zip(arg_names.iter()).map(|(arg, name)| (name.clone(), arg)).collect::<HashMap<_, _>>();
+                    let params = evaluated_args
+                        .into_iter()
+                        .zip(arg_names.iter())
+                        .map(|(arg, name)| (name.clone(), arg))
+                        .collect::<HashMap<_, _>>();
                     let args_map = BamlMap::from_iter(params.into_iter());
                     let ctx = env
                         .runtime
@@ -144,7 +179,6 @@ async fn beta_reduce<'a, T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug 
         _ => Err(anyhow::anyhow!("Not an application: {:?}", expr)),
     }
 }
-
 
 /// Fully evaluate an expression to a value.
 pub async fn eval_to_value<'a, T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug + Default>(
@@ -187,7 +221,12 @@ pub fn initial_context(ir: &IntermediateRepr) -> HashMap<Name, Expr<(), ()>> {
         );
     }
     for llm_function in ir.functions.iter() {
-        let params = llm_function.elem.inputs.iter().map(|arg| arg.0.clone()).collect::<Vec<_>>();
+        let params = llm_function
+            .elem
+            .inputs
+            .iter()
+            .map(|arg| arg.0.clone())
+            .collect::<Vec<_>>();
         ctx.insert(
             llm_function.elem.name.clone(),
             Expr::LLMFunction(llm_function.elem.name.clone(), params, ()),
@@ -225,7 +264,9 @@ mod tests {
         fn Second(x: string, y: string) -> int {
           let x1 = LlmParseInt(x);
           let y1 = LlmParseInt(y);
-          y1
+          let z1 = Double(y1);
+          let a1 = Double(z1);
+          a1
         }
 
         fn DoId(x: int, y: int) -> int {
@@ -255,11 +296,76 @@ mod tests {
         }
 
         test TestSecond {
-          functions [second]
+          functions [Second]
           args {
-            x: "123"
-            y: "456"
+            x "123"
+            y "456"
           }
+        }
+
+        test TestParse {
+          functions [LlmParseInt]
+          args { inp "123"}
+          @@assert({{ this == 124 }})
+        }
+
+        enum MyEnum {
+          A
+          B
+          C
+        }
+        
+        
+        class Foo {
+          my_foo Foo?
+        }
+        
+        class A {
+          i int
+        }
+        
+        client<llm> GPT3 {
+          provider openai
+          options {
+            model gpt-4o
+            api_key env.OPENAI_API_KEY
+          }
+        }
+        
+        enum Color {
+          RED
+          GREEN
+          BLUE
+        }
+        
+        fn First(x: int, y: int) -> int {
+          x
+        }
+        
+        
+        function DoIt(a: int) -> int {
+          client GPT3
+          prompt #"
+            Just return {{ a }} times 100.
+        
+            {{ ctx.output_format }}
+          "#
+        }
+        
+        test FirstTest {
+          functions [First]
+          args {
+            x 1
+            y 2
+          }
+        }
+        
+        test FooTest {
+          functions [DoIt]
+          args {
+            a 1
+            c RED
+            }
         }
         "##;
         BamlRuntime::from_file_content(
@@ -312,17 +418,25 @@ mod tests {
         // let res4 = res3.parsed().as_ref().unwrap().as_ref().unwrap();
         // dbg!(res4);
 
-        let params = BamlMap::from([(
-            "x".to_string(),
-            BamlValue::Int(888),
-        ), ("y".to_string(), BamlValue::Int(999))]);
-        let res3 = rt
-            .call_function("DoId".to_string(), &params, &ctx, None, None)
-            .await
-            .0.unwrap();
-        let res4 = res3.parsed().as_ref().unwrap().as_ref().unwrap();
-        dbg!(res4);
+        // let params = BamlMap::from([(
+        //     "x".to_string(),
+        //     BamlValue::Int(888),
+        // ), ("y".to_string(), BamlValue::Int(999))]);
+        // let res3 = rt
+        //     .call_function("DoId".to_string(), &params, &ctx, None, None)
+        //     .await
+        //     .0.unwrap();
+        // let res4 = res3.parsed().as_ref().unwrap().as_ref().unwrap();
+        // dbg!(res4);
 
-        assert!(false);
+        let on_event = |res: FunctionResult| {
+            eprintln!("on_event: {:?}", res);
+        };
+        let (res, _) = rt
+            // .run_test("Second", "TestSecond", &ctx, Some(on_event))
+            .run_test("First", "FirstTest", &ctx, Some(on_event))
+            // .run_test("LlmParseInt", "TestParse", &ctx, Some(on_event))
+            .await;
+        dbg!(res);
     }
 }

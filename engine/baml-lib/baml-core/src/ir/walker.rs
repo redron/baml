@@ -18,6 +18,9 @@ impl<'a> Walker<'a, &'a ExprFunctionNode> {
         self.elem().name.as_str()
     }
 
+    pub fn inputs(&self) -> &'a Vec<(String, baml_types::FieldType)> {
+        self.elem().inputs()
+    }
 
     pub fn walk_tests(
         &'a self,
@@ -216,6 +219,42 @@ impl<'a> Walker<'a, (&'a FunctionNode, &'a Impl)> {
     pub fn elem(&self) -> &'a repr::Implementation {
         &self.item.1.elem
     }
+
+}
+
+impl<'a> Walker<'a, (&'a ExprFunctionNode, &'a TestCase )> {
+    pub fn matches(&self, function_name: &str, test_name: &str) -> bool {
+        self.item.0.elem.name == function_name && self.item.1.elem.name == test_name
+    }
+    
+    pub fn name(&self) -> String {
+        format!("{}::{}", self.item.0.elem.name, self.item.1.elem.name)
+    }
+    
+    pub fn args(&self) -> &IndexMap<String, UnresolvedValue<()>> {
+        &self.item.1.elem.args
+    }
+    
+    pub fn test_case(&self) -> &repr::TestCase {
+        &self.item.1.elem
+    }
+    
+    pub fn span(&self) -> Option<&crate::Span> {
+        self.item.1.attributes.span.as_ref()
+    }
+    
+    pub fn test_case_params(
+        &self,
+        ctx: &EvaluationContext<'_>,
+    ) -> Result<IndexMap<String, Result<BamlValue>>> {
+        self.args()
+            .iter()
+            .map(|(k, v)| Ok((k.clone(), v.resolve_serde::<BamlValue>(ctx))))
+            .collect()
+    }
+    
+    
+    
 }
 
 impl<'a> Walker<'a, (&'a FunctionNode, &'a TestCase)> {

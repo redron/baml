@@ -15,9 +15,9 @@ use baml_types::BamlValueWithMeta;
 use baml_types::ResponseCheck;
 use baml_types::{BamlMediaType, BamlValue, GeneratorOutputType, TypeValue};
 use indexmap::IndexMap;
-use internal_baml_core::ir::repr::Walker;
 use internal_baml_codegen::version_check::GeneratorType;
 use internal_baml_codegen::version_check::{check_version, VersionCheckMode};
+use internal_baml_core::ir::repr::Walker;
 use internal_llm_client::AllowedRoleMetadata;
 use jsonish::deserializer::deserialize_flags::Flag;
 use jsonish::BamlValueWithFlags;
@@ -749,9 +749,9 @@ impl WithRenderError for baml_runtime::TestFailReason<'_> {
                         baml_runtime::errors::ExposedError::FinishReasonError {
                             message, ..
                         } => Some(message.clone()),
-                        baml_runtime::errors::ExposedError::ClientHttpError {
-                            message, ..
-                        } => Some(message.clone()),
+                        baml_runtime::errors::ExposedError::ClientHttpError { message, .. } => {
+                            Some(message.clone())
+                        }
                     },
                     None => Some(format!("{e:#}")),
                 }
@@ -944,7 +944,17 @@ impl WasmRuntime {
             .internal()
             .ir()
             .walk_functions()
-            .chain(self.runtime.internal().ir().expr_fns_as_functions().iter().map(|f| Walker { db: &self.runtime.internal().ir(), item: f }))
+            .chain(
+                self.runtime
+                    .internal()
+                    .ir()
+                    .expr_fns_as_functions()
+                    .iter()
+                    .map(|f| Walker {
+                        db: &self.runtime.internal().ir(),
+                        item: f,
+                    }),
+            )
             .map(|f| {
                 let snippet = format!(
                     r#"test TestName {{
@@ -1636,13 +1646,15 @@ impl WasmFunction {
             .into();
             on_partial_response.call1(&this, &res).unwrap();
         });
+        let cb2: Option<Box<dyn Fn(_) -> ()>> = None;
 
         let ctx = rt.create_ctx_manager(
             BamlValue::String("wasm".to_string()),
             js_fn_to_baml_src_reader(get_baml_src_cb),
         );
         let (test_response, span) = rt
-            .run_test(&function_name, &test_name, &ctx, Some(cb))
+            // .run_test(&function_name, &test_name, &ctx, Some(cb))
+            .run_test(&function_name, &test_name, &ctx, cb2) // TODO: Just guessing/testing.
             .await;
 
         log::info!("test_response: {:#?}", test_response);
