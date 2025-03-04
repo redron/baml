@@ -786,6 +786,9 @@ impl Project {
         }
 
         if let Some(notifier) = runtime_notifier {
+            eprintln!("RUNTIME_UPDATED");
+            dbg!(&self.root_path());
+            dbg!(&file_map);
             notifier
                 .0
                 .send(lsp_server::Message::Notification(Notification::new(

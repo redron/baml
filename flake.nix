@@ -85,11 +85,12 @@
           pythonEnv
           ruby
           maturin
-          nodePackages.pnpm
-          nodePackages.nodejs
+          pnpm
+          nodejs
           toolchain
           uv
           wasm-pack
+          wasm-bindgen-cli
         ]) ++ (if pkgs.stdenv.isDarwin then appleDeps else []);
         nativeBuildInputs = [
           pkgs.openssl

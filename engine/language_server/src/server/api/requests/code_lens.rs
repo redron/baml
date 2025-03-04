@@ -96,7 +96,6 @@ impl SyncRequestHandler for CodeLens {
             .collect();
 
         function_lenses.extend(test_case_lenses);
-        tracing::info!("CODE LENS: {:?}", function_lenses);
 
         Ok(Some(function_lenses))
     }
