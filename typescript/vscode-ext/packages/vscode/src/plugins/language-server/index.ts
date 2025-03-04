@@ -233,9 +233,9 @@ const activateClient = (
       WebPanelView.currentPanel?.postMessage('baml_settings_updated', bamlConfig)
     })
 
-    client.onRequest('runtime_updated', (params: { root_path: string; files: Record<string, string> }) => {
+    // Handler for both notifications and requests of type "runtime_updated".
+    const handleRuntimeUpdated = (params: { root_path: string; files: Record<string, string> }) => {
       // Only send message if current file is part of this root path
-      console.log('runtime_updated', params)
       const activeEditor = vscode.window.activeTextEditor
       if (activeEditor) {
         const currentFilePath = URI.parse(activeEditor.document.uri.toString()).fsPath
@@ -252,6 +252,18 @@ const activateClient = (
       } else {
         console.log('no active editor')
       }
+    }
+
+    // The Node-based Language Server sends REQUESTS of type "runtime_updated".
+    client.onRequest('runtime_updated', (params: { root_path: string; files: Record<string, string> }) => {
+      console.log('REQUEST: runtime_updated')
+      handleRuntimeUpdated(params)
+    })
+
+    // The Web-based Language Server sends NOTIFICATIONS of type "runtime_updated".
+    client.onNotification('runtime_updated', (params: { root_path: string; files: Record<string, string> }) => {
+      console.log('NOTIF: runtime_updated')
+      handleRuntimeUpdated(params)
     })
 
     // this will fail otherwise in dev mode if the config where the baml path is hasnt been picked up yet. TODO: pass the config to the server to avoid this.

@@ -80,16 +80,14 @@ impl Session {
             );
         }
 
-        let mut session = Self {
+        Ok(Self {
             position_encoding,
             projects_by_workspace_folder: workspaces,
             index: Some(Arc::new(index)),
             resolved_client_capabilities: Arc::new(ResolvedClientCapabilities::new(
                 client_capabilities,
             )),
-        };
-        session.reload(None)?;
-        Ok(session)
+        })
     }
 
     // TODO(dhruvmanila): Ideally, we should have a single method for `workspace_db_for_path_mut`

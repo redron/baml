@@ -22,14 +22,8 @@ impl SyncNotificationHandler for DidOpenTextDocumentHandler {
         params: DidOpenTextDocumentParams,
     ) -> Result<()> {
         tracing::info!("DidOpenTextDocumentHandler");
-        // let Ok(path) = url_to_any_system_path(&params.text_document.uri) else {
-        //     return Ok(());
-        // };
-
-        // let document = TextDocument::new(params.text_document.text, params.text_document.version);
 
         let url = params.text_document.uri;
-        // session.open_text_document(url.clone(), document);
         session
             .ensure_project_db_for_baml_file(&url)
             .internal_error()?;

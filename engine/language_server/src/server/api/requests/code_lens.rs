@@ -15,13 +15,14 @@ impl RequestHandler for CodeLens {
 impl SyncRequestHandler for CodeLens {
     fn run(
         session: &mut Session,
-        _notifier: Notifier,
+        notifier: Notifier,
         _requester: &mut Requester,
         params: CodeLensParams,
     ) -> Result<Option<Vec<lsp_types::CodeLens>>> {
         session
             .ensure_project_db_for_baml_file(&params.text_document.uri)
             .internal_error()?;
+        session.reload(Some(notifier)).internal_error()?;
         let project = session
             .default_project_db_mut()
             .expect("Ensured that a project db exists");

@@ -130,15 +130,24 @@ impl Server {
             anyhow::bail!("Multi-root workspaces are not supported yet");
         }
 
+        let mut session = Session::new(
+            &client_capabilities,
+            position_encoding,
+            global_settings,
+            &workspaces,
+        )?;
+        
+        // Create a client and notifier to pass to reload
+        let client = client::Client::new(connection.make_sender());
+        let notifier = client.notifier();
+        
+        // Reload the session with the notifier
+        session.reload(Some(notifier))?;
+
         Ok(Self {
             connection,
             worker_threads,
-            session: Session::new(
-                &client_capabilities,
-                position_encoding,
-                global_settings,
-                &workspaces,
-            )?,
+            session,
             client_capabilities,
         })
     }
@@ -207,6 +216,14 @@ impl Server {
         mut session: Session,
         worker_threads: NonZeroUsize,
     ) -> anyhow::Result<()> {
+
+        // Ensure we have a notifier for reload operations
+        let client = client::Client::new(connection.make_sender());
+        let notifier = client.notifier();
+        
+        // Make sure the session is properly loaded after initialization
+        session.reload(Some(notifier.clone()))?;
+
         let mut scheduler =
             schedule::Scheduler::new(&mut session, worker_threads, connection.make_sender());
 
