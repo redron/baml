@@ -235,6 +235,7 @@ const activateClient = (
 
     client.onRequest('runtime_updated', (params: { root_path: string; files: Record<string, string> }) => {
       // Only send message if current file is part of this root path
+      console.log('runtime_updated', params)
       const activeEditor = vscode.window.activeTextEditor
       if (activeEditor) {
         const currentFilePath = URI.parse(activeEditor.document.uri.toString()).fsPath

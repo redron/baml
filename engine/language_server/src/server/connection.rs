@@ -78,7 +78,7 @@ impl ConnectionInitializer {
 
 impl Connection {
     /// Make a new `ClientSender` for sending messages to the client.
-    pub fn make_sender(&self) -> ClientSender {
+    pub(crate) fn make_sender(&self) -> ClientSender {
         ClientSender {
             weak_sender: Arc::downgrade(&self.sender),
         }
@@ -135,7 +135,7 @@ impl Connection {
 /// If the `Connection` that created this `ClientSender` is dropped, any `send` calls will throw
 /// an error.
 #[derive(Clone, Debug)]
-pub(crate) struct ClientSender {
+pub struct ClientSender {
     weak_sender: Weak<ConnectionSender>,
 }
 
