@@ -367,6 +367,71 @@ mod tests {
             c RED
             }
         }
+
+        client<llm> Claude {
+          provider anthropic
+          options {
+            model claude-3-haiku-20240307
+            api_key env.ANTHROPIC_API_KEY
+            max_tokens 1000
+        
+          }
+        }
+
+        function HaikuClaude(topic: string) -> string {
+          client Claude
+          prompt #"Produce a haiku about {{ topic }}"#
+        }
+        
+        function JudgeClaude(haiku: string) -> int {
+          client Claude
+          prompt #"Rate this haiku on a scale of 1-10 {{ haiku }}"#
+        }
+        
+        function JudgeOpenAI(haiku: string) -> int {
+          client GPT3
+          prompt #"Rate this haiku on a scale of 1-10 {{ haiku }}"#
+        }
+        
+        
+        
+        
+        function HaiukOpenAI(topic: string) -> string {
+          client Claude
+          prompt #"Produce a haiku about {{ topic }}"#
+        }
+        
+        class ReportCard {
+          claude_haiku_score int @description("The score for the Claude haiku on a 1-10 scale")
+          openai_haiku_score int @description("The score for the OpenAI haiku on a 1-10 scale")
+          claude_critique string @description("A critique of the Claude haiku")
+          openai_critique string @description("A critique of the OpenAI haiku")
+        }
+        
+        function MakeHaikuReport(claude_haiku: string, openai_haiku: string) -> ReportCard {
+          client GPT3
+          prompt #"
+            Produce a critique of the following haiku:
+            Claude haiku: {{ claude_haiku }}
+            OpenAI haiku: {{ openai_haiku }}
+            
+          "#
+        }
+        
+        
+        fn CompareHaikus(topic: string) -> ReportCard {
+          let claude_haiku = HaikuClaude(topic);
+          let openai_haiku = HaikuOpenAI(topic);
+          MakeHaikuReport(claude_haiku, openai_haiku)
+        }
+        
+        test Test {
+          functions [CompareHaikus]
+          args {
+            topic "The sky is blue"
+          }
+        }
+
         "##;
         BamlRuntime::from_file_content(
             ".",
@@ -434,7 +499,8 @@ mod tests {
         };
         let (res, _) = rt
             // .run_test("Second", "TestSecond", &ctx, Some(on_event))
-            .run_test("First", "FirstTest", &ctx, Some(on_event))
+            // .run_test("First", "FirstTest", &ctx, Some(on_event))
+            .run_test("CompareHaikus", "Test", &ctx, Some(on_event))
             // .run_test("LlmParseInt", "TestParse", &ctx, Some(on_event))
             .await;
         dbg!(res);
