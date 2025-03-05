@@ -14,42 +14,6 @@
 
   outputs = { self, nixpkgs, flake-utils, fenix, ... }:
 
-    let
-
-      # buildTargets = {
-      #   "x86_64-linux" = {
-      #     crossSystemConfig = "x86_64-unknown-linux-musl";
-      #     rustTarget = "x86_64-unknown-linux-musl";
-      #   };
-      #   "aarch64-linux" = {
-      #     crossSystemConfig = "x86_64-unknown-linux-musl";
-      #     rustTarget = "x86_64-unknown-linux-musl";
-      #   };
-      #   "aarch64-darwin" = {};
-      #   "wasm" = {
-      #     crossSystemConfig = "wasm32-unknown-unknown";
-      #     rustTarget = "wasm32-unknown-unknown";
-      #     makeBuildPackageAttrs = pkgsCross: {
-      #       OPENSSL_STATIC = null;
-      #       OPENSSL_LIB_DIR = null;
-      #       OPENSSL_INCLUDE_DIR = null;
-      #     };
-      #   };
-      # };
-
-      # mkPkgs = buildSystem: targetSystem: import nixpkgs ({
-      #   system = buildSystem;
-      # } // (if targetSystem == null then {} else {
-      #   crossSystemcnofig = buildTargets.${targetSystem}.crossSystemConfig;
-      # }));
-
-      # eachSystem = supportedSystems: callback: builtins.fold'
-      #   (overall: system: overall // { ${system} = callback system; })
-      #   {}
-      #   supportedSystems;
-
-    in
-
     flake-utils.lib.eachDefaultSystem (system:
 
       let
@@ -85,11 +49,12 @@
           pythonEnv
           ruby
           maturin
-          nodePackages.pnpm
-          nodePackages.nodejs
+          pnpm
+          nodejs
           toolchain
           uv
           wasm-pack
+          wasm-bindgen-cli
         ]) ++ (if pkgs.stdenv.isDarwin then appleDeps else []);
         nativeBuildInputs = [
           pkgs.openssl

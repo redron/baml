@@ -499,8 +499,8 @@ mod tests {
         };
         let (res, _) = rt
             // .run_test("Second", "TestSecond", &ctx, Some(on_event))
-            // .run_test("First", "FirstTest", &ctx, Some(on_event))
-            .run_test("CompareHaikus", "Test", &ctx, Some(on_event))
+            .run_test("First", "FirstTest", &ctx, Some(on_event))
+            // .run_test("CompareHaikus", "Test", &ctx, Some(on_event))
             // .run_test("LlmParseInt", "TestParse", &ctx, Some(on_event))
             .await;
         dbg!(res);
