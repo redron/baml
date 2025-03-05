@@ -1,3 +1,5 @@
+import * as fs from 'fs'
+import * as os from 'os'
 import * as path from 'path'
 
 import type { ParserDatabase, TestRequest } from '@baml/common'
@@ -326,7 +328,10 @@ const plugin: BamlVSCodePlugin = {
     // --inspect=6009: runs the server in Node's Inspector mode so VS Code can attach to the server for debugging
     const debugOptions = {
       execArgv: ['--nolazy', '--inspect=6009'],
-      env: { DEBUG: true },
+      env: {
+        DEBUG: true,
+        ...process.env,
+      },
     }
 
     // If the extension is launched in debug mode then the debug server options are used
@@ -340,13 +345,29 @@ const plugin: BamlVSCodePlugin = {
     //   },
     // }
 
+    var serverExecutableName = 'baml-cli';
+    const platform = os.platform();
+    if (platform === 'win32') {
+      serverExecutableName = `${serverExecutableName}.exe`;
+    }
+    const serverAbsolutePath = context.asAbsolutePath(path.join('server', serverExecutableName))
+    if (platform != "win32") {
+      fs.chmodSync(serverAbsolutePath, '755')
+    }
+
     const serverOptions: ServerOptions = {
-      command: '/Users/greghale/code/baml/engine/target/debug/baml-cli',
-      args: ['lsp'],
-      options: {
-        cwd: '/Users/greghale/code/baml/engine/target/debug',
-        env: process.env,
+      run: {
+        command: serverAbsolutePath,
+        args: ['lsp'],
+        options: {
+          env: process.env,
+        },
       },
+      debug: {
+        command: serverAbsolutePath,
+        args: ['lsp'],
+        options: debugOptions,
+      }
     }
     // Options to control the language client
     const clientOptions: LanguageClientOptions = {
