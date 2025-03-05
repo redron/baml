@@ -77,16 +77,22 @@ impl TextDocument {
     }
 
     pub fn get_text_range(&self, range: Range) -> Option<String> {
-        let start_offset = self.index().offset(
-            OneIndexed::from_zero_indexed(range.start.line as usize),
-            OneIndexed::from_zero_indexed(range.start.character as usize),
-            &self.contents,
-        ).to_usize();
-        let end_offset = self.index().offset(
-            OneIndexed::from_zero_indexed(range.end.line as usize),
-            OneIndexed::from_zero_indexed(range.end.character as usize),
-            &self.contents,
-        ).to_usize();
+        let start_offset = self
+            .index()
+            .offset(
+                OneIndexed::from_zero_indexed(range.start.line as usize),
+                OneIndexed::from_zero_indexed(range.start.character as usize),
+                &self.contents,
+            )
+            .to_usize();
+        let end_offset = self
+            .index()
+            .offset(
+                OneIndexed::from_zero_indexed(range.end.line as usize),
+                OneIndexed::from_zero_indexed(range.end.character as usize),
+                &self.contents,
+            )
+            .to_usize();
         match self.contents().get(start_offset..end_offset) {
             Some(slice) => Some(slice.to_string()),
             None => {
