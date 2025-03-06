@@ -61,6 +61,10 @@ pub fn parse_statement(token: Pair<'_>, diagnostics: &mut Diagnostics) -> Option
     let mut tokens = token.into_inner();
     // Our only statements are let bindings, so:
     let let_binding_token = tokens.next().expect("Should be let binding");
+    if let_binding_token.as_rule() == Rule::BLOCK_LEVEL_CATCH_ALL {
+        diagnostics.push_error(DatamodelError::new_static("Parser only allows let bindings here", span));
+        return None;
+    }
     assert_correct_parser!(let_binding_token, Rule::let_expr);
     let mut let_binding_tokens = let_binding_token.into_inner();
     let identifier = parse_identifier(let_binding_tokens.next().expect("There is an identifier"), diagnostics);
@@ -155,6 +159,10 @@ pub fn parse_lambda(token: Pair<'_>, diagnostics: &mut Diagnostics) -> Option<ex
 }
 
 pub fn parse_function_body(token: Pair<'_>, diagnostics: &mut Diagnostics) -> Option<FunctionBody> {
+    if token.as_rule() == Rule::BLOCK_LEVEL_CATCH_ALL {
+        diagnostics.push_error(DatamodelError::new_static("Invalid function body", diagnostics.span(token.as_span())));
+        return None;
+    }
     assert_correct_parser!(token, Rule::expr_fn_body);
     let span = diagnostics.span(token.as_span());
     dbg!(&token);
