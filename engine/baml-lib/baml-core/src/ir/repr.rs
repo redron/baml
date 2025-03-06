@@ -888,7 +888,12 @@ impl WithRepr<FieldType> for ast::FieldType {
                         }
                     }
 
-                    None => return Err(anyhow!("Field type uses unresolvable local identifier")),
+                    None => {
+                        return Err(anyhow!(
+                            "Field type uses unresolvable local identifier {}",
+                            idn
+                        ))
+                    }
                 },
                 arity,
             ),

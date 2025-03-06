@@ -142,6 +142,7 @@ async fn beta_reduce<'a, T: Clone + std::fmt::Debug, U: Clone + std::fmt::Debug 
                     let mut evaluated_args: Vec<BamlValue> = Vec::new();
                     for arg in args {
                         let val = eval_to_value(env, arg).await;
+                        eprintln!("BETA_REDUCE_LLM_ARG: {:?}", val);
                         evaluated_args.push(val.unwrap().unwrap().clone().value());
                     }
 
@@ -245,8 +246,20 @@ mod tests {
 
     // Make a testing runtime. It assumes the presence of
     // OPENAI_API_KEY environment variable.
-    fn runtime() -> BamlRuntime {
-        let content = r##"
+    fn runtime(content: &str) -> BamlRuntime {
+        BamlRuntime::from_file_content(
+            ".",
+            &HashMap::from([("main.baml", content)]),
+            HashMap::from([("OPENAI_API_KEY", env!("OPENAI_API_KEY"))]),
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_eval_expr() {
+        let rt = runtime(
+            r##"
+
         client<llm> GPT35 {
           provider baml-openai-chat
           options {
@@ -367,83 +380,8 @@ mod tests {
             c RED
             }
         }
-
-        client<llm> Claude {
-          provider anthropic
-          options {
-            model claude-3-haiku-20240307
-            api_key env.ANTHROPIC_API_KEY
-            max_tokens 1000
-        
-          }
-        }
-
-        function HaikuClaude(topic: string) -> string {
-          client Claude
-          prompt #"Produce a haiku about {{ topic }}"#
-        }
-        
-        function JudgeClaude(haiku: string) -> int {
-          client Claude
-          prompt #"Rate this haiku on a scale of 1-10 {{ haiku }}"#
-        }
-        
-        function JudgeOpenAI(haiku: string) -> int {
-          client GPT3
-          prompt #"Rate this haiku on a scale of 1-10 {{ haiku }}"#
-        }
-        
-        
-        
-        
-        function HaiukOpenAI(topic: string) -> string {
-          client Claude
-          prompt #"Produce a haiku about {{ topic }}"#
-        }
-        
-        class ReportCard {
-          claude_haiku_score int @description("The score for the Claude haiku on a 1-10 scale")
-          openai_haiku_score int @description("The score for the OpenAI haiku on a 1-10 scale")
-          claude_critique string @description("A critique of the Claude haiku")
-          openai_critique string @description("A critique of the OpenAI haiku")
-        }
-        
-        function MakeHaikuReport(claude_haiku: string, openai_haiku: string) -> ReportCard {
-          client GPT3
-          prompt #"
-            Produce a critique of the following haiku:
-            Claude haiku: {{ claude_haiku }}
-            OpenAI haiku: {{ openai_haiku }}
-            
-          "#
-        }
-        
-        
-        fn CompareHaikus(topic: string) -> ReportCard {
-          let claude_haiku = HaikuClaude(topic);
-          let openai_haiku = HaikuOpenAI(topic);
-          MakeHaikuReport(claude_haiku, openai_haiku)
-        }
-        
-        test Test {
-          functions [CompareHaikus]
-          args {
-            topic "The sky is blue"
-          }
-        }
-
-        "##;
-        BamlRuntime::from_file_content(
-            ".",
-            &HashMap::from([("main.baml", content)]),
-            HashMap::from([("OPENAI_API_KEY", env!("OPENAI_API_KEY"))]),
-        )
-        .unwrap()
-    }
-
-    #[tokio::test]
-    async fn test_eval_expr() {
-        let rt = runtime();
+        "##,
+        );
         let ctx = rt.create_ctx_manager(BamlValue::String("test".to_string()), None);
 
         // let params = BamlMap::from([(
@@ -504,5 +442,317 @@ mod tests {
             // .run_test("LlmParseInt", "TestParse", &ctx, Some(on_event))
             .await;
         dbg!(res);
+        assert!(false);
+    }
+
+    #[tokio::test]
+    async fn test_haikus() {
+        let rt = runtime(
+            r##"
+
+               class TwoInts {
+                int1 int
+                int2 int
+              }
+              
+              function AddThem(two_ints: TwoInts) -> int {
+                client GPT3
+                prompt #"
+                  Add {{ two_ints.int1}} and {{ two_ints.int2 }} together.
+                  {{ ctx.output_format }}
+                "#
+              }
+              
+              test AddThemTest {
+                functions [AddThem]
+                args {
+                  two_ints {
+                    int1 1
+                    int2 2
+                    }
+                }
+              }
+              
+              class BreakResult {
+                two_ints TwoInts
+                reason_interesting string @description("A reason why this split is interesting")
+              }
+              
+              function BreakThem(inp: int) -> BreakResult {
+                client GPT3
+                prompt #"
+                  Split {{ inp }} into two integers in any way you like.
+                  {{ ctx.output_format }}
+                "#
+              }
+              
+              test BreakThemTest {
+                functions [BreakThem]
+                args {
+                  inp 123
+                }
+              }
+              
+              fn Compose(two_ints: TwoInts) -> BreakResult {
+                let z = AddThem(two_ints);
+                BreakThem(z)
+              }
+              
+              test ComposeTest {
+                functions [Compose]
+                args {
+                  two_ints {
+                    int1 1
+                    int2 2
+                  }
+                }
+              }       
+        class Comparison {
+          haiku1 string
+          haiku1_score int
+          haiku2 string
+          haiku2_score int
+          three_reasons string[]
+        }
+        
+        function CompareHaikus(haiku1: string, haiku2: string) -> Comparison {
+          client GPT3
+          prompt #"
+            Compare the following haikus:
+            {{ haiku1 }}
+            {{ haiku2 }}
+            {{ ctx.output_format }}
+          "#
+        }
+        
+        fn HaikusForTopic(topic: string) -> Comparison {
+          let haiku1 = Haiku35(topic);
+          let haiku2 = Haiku4o(topic);
+          CompareHaikus(haiku1, haiku2)
+        }
+        
+        test HaikusForTopicTest {
+          functions [HaikusForTopic]
+          args {
+            topic "The sky is blue"
+          }
+        }
+        
+        function Haiku35(topic: string) -> string {
+          client GPT3
+          prompt #"
+            Produce a haiku about {{ topic }}"#
+        }
+        
+        function Haiku4o(topic: string) -> string {
+          client GPT4o
+          prompt #"
+            Produce a haiku about {{ topic }}"#
+        }
+        
+        test Haiku35Test {
+          functions [Haiku35]
+          args {
+            topic "The sky is blue"
+          }
+        }
+        
+        test Haiku4oTest {
+          functions [Haiku4o]
+          args {
+            topic "The sky is blue"
+          }
+        }
+        
+
+        client<llm> GPT3 {
+          provider openai
+          options {
+            model gpt-3.5-turbo
+            api_key env.OPENAI_API_KEY
+          }
+        }
+        
+        client<llm> GPT4o {
+          provider openai
+          options {
+            model gpt-4o
+            api_key env.OPENAI_API_KEY
+          }
+        }
+      "##,
+        );
+        eprintln!("ir: {:?}", rt.inner.ir);
+        let ctx = rt.create_ctx_manager(BamlValue::String("test".to_string()), None);
+        let on_event = |res: FunctionResult| {
+            eprintln!("on_event: {:?}", res);
+        };
+        let (res, _) = rt
+            // .run_test("Second", "TestSecond", &ctx, Some(on_event))
+            .run_test("Compose", "ComposeTest", &ctx, Some(on_event))
+            // .run_test("CompareHaikus", "Test", &ctx, Some(on_event))
+            // .run_test("LlmParseInt", "TestParse", &ctx, Some(on_event))
+            .await;
+        dbg!(res);
+        assert!(false);
+    }
+
+    #[tokio::test]
+    async fn test_haikus_2() {
+        let rt = runtime(
+            r##"
+
+class TwoInts {
+  int1 int
+  int2 int
+}
+
+function AddThem(two_ints: TwoInts) -> int {
+  client GPT3
+  prompt #"
+    Add {{ two_ints.int1 }} and {{ two_ints.int2 }} together.
+    {{ ctx.output_format }}
+  "#
+}
+
+function BreakThem(inp: int) -> TwoInts {
+  client GPT3
+  prompt #"
+    Split {{ inp }} into two integers in any way you like.
+    {{ ctx.output_format }}
+  "#
+}
+
+
+fn Compose(two_ints: TwoInts) -> TwoInts {
+  BreakThem( AddThem(two_ints) )
+}
+
+
+test ComposeTest {
+  functions [Compose]
+  args {
+    two_ints {
+      int1 23
+      int2 12
+    }
+  }
+}
+
+class Comparison {
+  haiku1 string
+  haiku1_score int
+  haiku2 string
+  haiku2_score int
+  three_reasons string[]
+}
+
+function CompareHaikus(haiku1: string, haiku2: string, n_reasons: int) -> Comparison {
+  client GPT4o
+  prompt #"
+    Compare the following haikus:
+
+    {{ haiku1 }}
+
+    {{ haiku2 }}
+
+    Give {{ n_reasons }} reasons why you chose the higher-rated haiku.
+    {{ ctx.output_format }}
+  "#
+}
+
+fn HaikusForTopic(topic: string) -> Comparison {
+  let haiku1 = Haiku35(topic);
+  let haiku2 = Haiku4o(topic);
+  CompareHaikus(haiku1, haiku2)
+}
+
+test HaikusForTopicTest {
+  functions [HaikusForTopic]
+  args {
+    topic "The most wonderful thing about Mexico is its men"
+  }
+}
+
+
+let some_haiku = "The sky is blue, the grass is green, the sky is blue, the grass is green";
+
+let better_haiku = {
+  let topic = "Let's write GPU kernels in BAML";
+  Haiku4o(topic)
+};
+
+fn UseTopLevelThings(n_reasons: int) -> Comparison {
+  CompareHaikus(some_haiku, better_haiku, n_reasons)
+}
+
+test UseTopLevelThingsTest {
+  functions [UseTopLevelThings]
+  args {
+    n_reasons 3
+  }
+}
+
+function Haiku35(topic: string) -> string {
+  client GPT3
+  prompt #"
+    Produce a haiku about {{ topic }}"#
+}
+
+function Haiku4o(topic: string) -> string {
+  client GPT4o
+  prompt #"
+    Produce a haiku about {{ topic }}"#
+}
+
+test Haiku35Test {
+  functions [Haiku35]
+  args {
+    topic "The sky is blue"
+  }
+}
+
+test Haiku4oTest {
+  functions [Haiku4o]
+  args {
+    topic "The sky is blue"
+  }
+}
+
+
+
+client<llm> GPT3 {
+  provider openai
+  options {
+    model gpt-3.5-turbo
+    api_key env.OPENAI_API_KEY
+  }
+}
+
+client<llm> GPT4o {
+  provider openai
+  options {
+    model gpt-4o
+    api_key env.OPENAI_API_KEY
+  }
+}
+      "##,
+        );
+        eprintln!("ir: {:?}", rt.inner.ir);
+        let ctx = rt.create_ctx_manager(BamlValue::String("test".to_string()), None);
+        let on_event = |res: FunctionResult| {
+            eprintln!("on_event: {:?}", res);
+        };
+        let (res, _) = rt
+            // .run_test("Compose", "ComposeTest", &ctx, Some(on_event))
+            .run_test(
+                "UseTopLevelThings",
+                "UseTopLevelThingsTest",
+                &ctx,
+                Some(on_event),
+            )
+            .await;
+        dbg!(res);
+        assert!(false);
     }
 }
